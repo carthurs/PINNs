@@ -17,11 +17,96 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from plotting import newfig, savefig
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.gridspec as gridspec
+import pickle
+import ttictoc
+import tqdm
 
 np.random.seed(1234)
 tf.set_random_seed(1234)
 
 class PhysicsInformedNN:
+
+    def __getstate__(self):
+        odict = self.__dict__.copy()
+        del odict['sess']
+        del odict['optimizer_Adam']
+        del odict['optimizer']
+        del odict['train_op_Adam']
+        # del odict['lb']
+        # del odict['ub']
+        # del odict['X']
+        # del odict['x']
+        # del odict['y']
+        # del odict['t']
+        # del odict['u']
+        # del odict['v']
+        # del odict['layers']
+        del odict['weights']
+        del odict['biases']
+        del odict['lambda_1']
+        del odict['lambda_2']
+        del odict['x_tf']
+        del odict['y_tf']
+        del odict['t_tf']
+        del odict['u_tf']
+        del odict['v_tf']
+        del odict['u_pred']
+        del odict['v_pred']
+        del odict['p_pred']
+        del odict['f_u_pred']
+        del odict['f_v_pred']
+        del odict['loss']
+        return odict
+
+
+    def __setstate__(self, odict):
+        self.__dict__.update(odict)
+        self.finalise_state_setup()
+
+
+    def finalise_state_setup(self):
+        # Initialize NN
+        self.weights, self.biases = self.initialize_NN(layers)
+
+        # Initialize parameters
+        self.lambda_1 = tf.Variable([0.0], dtype=tf.float32)
+        self.lambda_2 = tf.Variable([0.0], dtype=tf.float32)
+
+        # tf placeholders and graph
+        self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
+                                                     log_device_placement=True))
+
+        # These placeholders all have shape [None, 1], as self.x.shape[1] = 1.
+        self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]])
+        self.y_tf = tf.placeholder(tf.float32, shape=[None, self.y.shape[1]])
+        self.t_tf = tf.placeholder(tf.float32, shape=[None, self.t.shape[1]])
+
+        self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]])
+        self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
+
+        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred = self.net_NS(self.x_tf, self.y_tf,
+                                                                                          self.t_tf)
+
+        self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
+                    tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
+                    tf.reduce_sum(tf.square(self.f_u_pred)) + \
+                    tf.reduce_sum(tf.square(self.f_v_pred))
+
+        self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,
+                                                                method='L-BFGS-B',
+                                                                options={'maxiter': 50000,
+                                                                         'maxfun': 50000,
+                                                                         'maxcor': 50,
+                                                                         'maxls': 50,
+                                                                         'ftol': 1.0 * np.finfo(float).eps})
+
+        self.optimizer_Adam = tf.train.AdamOptimizer()
+        self.train_op_Adam = self.optimizer_Adam.minimize(self.loss)
+
+        init = tf.global_variables_initializer()
+        self.sess.run(init)
+
+
     # Initialize the class
     def __init__(self, x, y, t, u, v, layers):
         
@@ -41,44 +126,7 @@ class PhysicsInformedNN:
         
         self.layers = layers
         
-        # Initialize NN
-        self.weights, self.biases = self.initialize_NN(layers)        
-        
-        # Initialize parameters
-        self.lambda_1 = tf.Variable([0.0], dtype=tf.float32)
-        self.lambda_2 = tf.Variable([0.0], dtype=tf.float32)
-        
-        # tf placeholders and graph
-        self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                     log_device_placement=True))
-        
-        self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]])
-        self.y_tf = tf.placeholder(tf.float32, shape=[None, self.y.shape[1]])
-        self.t_tf = tf.placeholder(tf.float32, shape=[None, self.t.shape[1]])
-        
-        self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]])
-        self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
-        
-        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred = self.net_NS(self.x_tf, self.y_tf, self.t_tf)
-        
-        self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
-                    tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
-                    tf.reduce_sum(tf.square(self.f_u_pred)) + \
-                    tf.reduce_sum(tf.square(self.f_v_pred))
-                    
-        self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss, 
-                                                                method = 'L-BFGS-B', 
-                                                                options = {'maxiter': 50000,
-                                                                           'maxfun': 50000,
-                                                                           'maxcor': 50,
-                                                                           'maxls': 50,
-                                                                           'ftol' : 1.0 * np.finfo(float).eps})        
-        
-        self.optimizer_Adam = tf.train.AdamOptimizer()
-        self.train_op_Adam = self.optimizer_Adam.minimize(self.loss)                    
-        
-        init = tf.global_variables_initializer()
-        self.sess.run(init)
+        self.finalise_state_setup()
 
     def initialize_NN(self, layers):        
         weights = []
@@ -142,7 +190,7 @@ class PhysicsInformedNN:
         return u, v, p, f_u, f_v
     
     def callback(self, loss, lambda_1, lambda_2):
-        print('Loss: %.3e, l1: %.3f, l2: %.5f' % (loss, lambda_1, lambda_2))
+        print('(A) Loss: %.3e, l1: %.3f, l2: %.5f' % (loss, lambda_1, lambda_2))
       
     def train(self, nIter): 
 
@@ -150,7 +198,7 @@ class PhysicsInformedNN:
                    self.u_tf: self.u, self.v_tf: self.v}
         
         start_time = time.time()
-        for it in range(nIter):
+        for it in tqdm.tqdm(range(nIter)):
             self.sess.run(self.train_op_Adam, tf_dict)
             
             # Print
@@ -159,7 +207,7 @@ class PhysicsInformedNN:
                 loss_value = self.sess.run(self.loss, tf_dict)
                 lambda_1_value = self.sess.run(self.lambda_1)
                 lambda_2_value = self.sess.run(self.lambda_2)
-                print('It: %d, Loss: %.3e, l1: %.3f, l2: %.5f, Time: %.2f' % 
+                print('It: %d, (B) Loss: %.3e, l1: %.3f, l2: %.5f, Time: %.2f' %
                       (it, loss_value, lambda_1_value, lambda_2_value, elapsed))
                 start_time = time.time()
             
@@ -167,8 +215,7 @@ class PhysicsInformedNN:
                                 feed_dict = tf_dict,
                                 fetches = [self.loss, self.lambda_1, self.lambda_2],
                                 loss_callback = self.callback)
-            
-    
+
     def predict(self, x_star, y_star, t_star):
         
         tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
@@ -179,7 +226,7 @@ class PhysicsInformedNN:
         
         return u_star, v_star, p_star
 
-def plot_solution(X_star, u_star, index):
+def plot_solution(X_star, u_star, index, title):
     
     lb = X_star.min(0)
     ub = X_star.max(0)
@@ -193,6 +240,8 @@ def plot_solution(X_star, u_star, index):
     plt.figure(index)
     plt.pcolor(X,Y,U_star, cmap = 'jet')
     plt.colorbar()
+    plt.title(title)
+    plt.savefig(title.replace(" ", "_") + '.png')
     
     
 def axisEqual3D(ax):
@@ -205,7 +254,14 @@ def axisEqual3D(ax):
         getattr(ax, 'set_{}lim'.format(dim))(ctr - r, ctr + r)
         
         
-if __name__ == "__main__": 
+if __name__ == "__main__":
+
+    timer = ttictoc.TicToc()
+    timer.tic()
+
+    do_noisy_data_case = False
+    load_existing_model = True
+    number_of_training_iterations = 200000
       
     N_train = 5000
     
@@ -214,45 +270,64 @@ if __name__ == "__main__":
     # Load Data
     data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
            
-    U_star = data['U_star'] # N x 2 x T
-    P_star = data['p_star'] # N x T
-    t_star = data['t'] # T x 1
-    X_star = data['X_star'] # N x 2
+    U_star = data['U_star']  # N x 2 x T
+    P_star = data['p_star']  # N x T
+    t_star = data['t']  # T x 1
+    X_star = data['X_star']  # N x 2
     
     N = X_star.shape[0]
     T = t_star.shape[0]
     
-    # Rearrange Data 
-    XX = np.tile(X_star[:,0:1], (1,T)) # N x T
-    YY = np.tile(X_star[:,1:2], (1,T)) # N x T
-    TT = np.tile(t_star, (1,N)).T # N x T
+    # Rearrange Data - NOTE: the .T here is the transpose of the numpy array - it's not the same as the variable T in
+    # the enclosing namespace
+    XX = np.tile(X_star[:, 0], (1, T)).T  # N x T
+    YY = np.tile(X_star[:, 1], (1, T)).T  # N x T
+    TT = np.tile(t_star, (1, N)).T  # N x T
     
-    UU = U_star[:,0,:] # N x T
-    VV = U_star[:,1,:] # N x T
-    PP = P_star # N x T
+    UU = U_star[:,0,:]  # N x T
+    VV = U_star[:,1,:]  # N x T
+    PP = P_star  # N x T
     
-    x = XX.flatten()[:,None] # NT x 1
-    y = YY.flatten()[:,None] # NT x 1
-    t = TT.flatten()[:,None] # NT x 1
+    x = XX.flatten()[:,None]  # NT x 1
+    y = YY.flatten()[:,None]  # NT x 1
+    t = TT.flatten()[:,None]  # NT x 1
     
-    u = UU.flatten()[:,None] # NT x 1
-    v = VV.flatten()[:,None] # NT x 1
-    p = PP.flatten()[:,None] # NT x 1
+    u = UU.flatten()[:,None]  # NT x 1
+    v = VV.flatten()[:,None]  # NT x 1
+    p = PP.flatten()[:,None]  # NT x 1
     
     ######################################################################
     ######################## Noiseles Data ###############################
     ######################################################################
     # Training Data    
     idx = np.random.choice(N*T, N_train, replace=False)
-    x_train = x[idx,:]
-    y_train = y[idx,:]
-    t_train = t[idx,:]
-    u_train = u[idx,:]
-    v_train = v[idx,:]
+    x_train = x[idx, :]
+    y_train = y[idx, :]
+    t_train = t[idx, :]
+    u_train = u[idx, :]
+    v_train = v[idx, :]
 
-    # Training
-    model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-    model.train(200000)
+    pickled_model_filename = 'trained_model_nonoise_{}.pickle'.format(number_of_training_iterations)
+    saved_tf_model_filename = 'trained_model_nonoise_{}.tf'.format(number_of_training_iterations)
+
+    if load_existing_model:
+        tf.reset_default_graph()
+        with open(pickled_model_filename, 'rb') as pickled_model_file:
+            model = pickle.load(pickled_model_file)
+
+        model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
+                                                     log_device_placement=True))
+
+        tf.train.Saver().restore(model.sess, saved_tf_model_filename)
+    else:
+        # Training
+        model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
+        model.train(number_of_training_iterations)  # 200000
+
+        # pickle
+        with open(pickled_model_filename, 'wb') as pickled_model_file:
+            pickle.dump(model, pickled_model_file)
+        tf.train.Saver().save(model.sess, saved_tf_model_filename)
     
     # Test Data
     snap = np.array([100])
@@ -284,11 +359,11 @@ if __name__ == "__main__":
     print('Error l2: %.5f%%' % (error_lambda_2))                  
     
     # Plot Results
-#    plot_solution(X_star, u_pred, 1)
-#    plot_solution(X_star, v_pred, 2)
-#    plot_solution(X_star, p_pred, 3)    
-#    plot_solution(X_star, p_star, 4)
-#    plot_solution(X_star, p_star - p_pred, 5)
+    plot_solution(X_star, u_pred, 1, "Predicted Velocity U")
+    plot_solution(X_star, v_pred, 2, "Predicted Velocity V")
+    plot_solution(X_star, p_pred, 3, "Predicted Pressure")
+    plot_solution(X_star, p_star, 4, "True Pressure")
+    plot_solution(X_star, p_star - p_pred, 5, "Pressure Error")
     
     # Predict for plotting
     lb = X_star.min(0)
@@ -303,26 +378,26 @@ if __name__ == "__main__":
     PP_star = griddata(X_star, p_pred.flatten(), (X, Y), method='cubic')
     P_exact = griddata(X_star, p_star.flatten(), (X, Y), method='cubic')
     
-    
-    ######################################################################
-    ########################### Noisy Data ###############################
-    ######################################################################
-    noise = 0.01        
-    u_train = u_train + noise*np.std(u_train)*np.random.randn(u_train.shape[0], u_train.shape[1])
-    v_train = v_train + noise*np.std(v_train)*np.random.randn(v_train.shape[0], v_train.shape[1])    
+    if do_noisy_data_case:
+        ######################################################################
+        ########################### Noisy Data ###############################
+        ######################################################################
+        noise = 0.01
+        u_train = u_train + noise*np.std(u_train)*np.random.randn(u_train.shape[0], u_train.shape[1])
+        v_train = v_train + noise*np.std(v_train)*np.random.randn(v_train.shape[0], v_train.shape[1])
 
-    # Training
-    model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-    model.train(200000)
-        
-    lambda_1_value_noisy = model.sess.run(model.lambda_1)
-    lambda_2_value_noisy = model.sess.run(model.lambda_2)
-      
-    error_lambda_1_noisy = np.abs(lambda_1_value_noisy - 1.0)*100
-    error_lambda_2_noisy = np.abs(lambda_2_value_noisy - 0.01)/0.01 * 100
-        
-    print('Error l1: %.5f%%' % (error_lambda_1_noisy))                             
-    print('Error l2: %.5f%%' % (error_lambda_2_noisy))     
+        # Training
+        model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
+        model.train(number_of_training_iterations)  # 200000
+
+        lambda_1_value_noisy = model.sess.run(model.lambda_1)
+        lambda_2_value_noisy = model.sess.run(model.lambda_2)
+
+        error_lambda_1_noisy = np.abs(lambda_1_value_noisy - 1.0)*100
+        error_lambda_2_noisy = np.abs(lambda_2_value_noisy - 0.01)/0.01 * 100
+
+        print('Error l1: %.5f%%' % (error_lambda_1_noisy))
+        print('Error l2: %.5f%%' % (error_lambda_2_noisy))
 
              
     
@@ -421,7 +496,7 @@ if __name__ == "__main__":
     ax.set_zlim3d(r3)
     axisEqual3D(ax)
     
-    # savefig('./figures/NavierStokes_data') 
+    # savefig('./figures/NavierStokes_data')
 
     
     fig, ax = newfig(1.015, 0.8)
@@ -479,14 +554,17 @@ if __name__ == "__main__":
     s = s + r' \end{array}$ \\ '
     s = s + r' \hline'
     s = s + r' Identified PDE (1\% noise) & $\begin{array}{c}'
-    s = s + r' u_t + %.3f (u u_x + v u_y) = -p_x + %.5f (u_{xx} + u_{yy})' % (lambda_1_value_noisy, lambda_2_value_noisy)
-    s = s + r' \\'
-    s = s + r' v_t + %.3f (u v_x + v v_y) = -p_y + %.5f (v_{xx} + v_{yy})' % (lambda_1_value_noisy, lambda_2_value_noisy)
+    if do_noisy_data_case:
+        s = s + r' u_t + %.3f (u u_x + v u_y) = -p_x + %.5f (u_{xx} + u_{yy})' % (lambda_1_value_noisy, lambda_2_value_noisy)
+        s = s + r' \\'
+        s = s + r' v_t + %.3f (u v_x + v v_y) = -p_y + %.5f (v_{xx} + v_{yy})' % (lambda_1_value_noisy, lambda_2_value_noisy)
     s = s + r' \end{array}$ \\ '
     s = s + r' \hline'
     s = s + r' \end{tabular}$'
  
     ax.text(0.015,0.0,s)
-    
-    # savefig('./figures/NavierStokes_prediction') 
 
+    timer.toc()
+    print("Time taken to run: {}".format(timer.elapsed))
+    
+    # savefig('./figures/NavierStokes_prediction')
