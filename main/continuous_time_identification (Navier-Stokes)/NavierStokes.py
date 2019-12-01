@@ -90,11 +90,13 @@ class PhysicsInformedNN:
         self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
                     tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
                     tf.reduce_sum(tf.square(self.f_u_pred)) + \
-                    tf.reduce_sum(tf.square(self.f_v_pred))
+                    tf.reduce_sum(tf.square(self.f_v_pred)) + \
+                    tf.square(self.p_pred[1] - self.p_first_spacetime_node)
 
+        self.max_optimizer_iterations = 50000  # 50000
         self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,
                                                                 method='L-BFGS-B',
-                                                                options={'maxiter': 50000,
+                                                                options={'maxiter': self.max_optimizer_iterations,
                                                                          'maxfun': 50000,
                                                                          'maxcor': 50,
                                                                          'maxls': 50,
@@ -108,7 +110,7 @@ class PhysicsInformedNN:
 
 
     # Initialize the class
-    def __init__(self, x, y, t, u, v, layers):
+    def __init__(self, x, y, t, u, v, layers, p_reference_point):
         
         X = np.concatenate([x, y, t], 1)
         
@@ -120,11 +122,15 @@ class PhysicsInformedNN:
         self.x = X[:,0:1]
         self.y = X[:,1:2]
         self.t = X[:,2:3]
+
+        self.p_first_spacetime_node = p_reference_point
         
         self.u = u
         self.v = v
         
         self.layers = layers
+
+        self.iteration_counter = 0
         
         self.finalise_state_setup()
 
@@ -190,7 +196,9 @@ class PhysicsInformedNN:
         return u, v, p, f_u, f_v
     
     def callback(self, loss, lambda_1, lambda_2):
-        print('(A) Loss: %.3e, l1: %.3f, l2: %.5f' % (loss, lambda_1, lambda_2))
+        self.iteration_counter += 1
+        print('(A) Loss: %.3e, l1: %.3f, l2: %.5f (%f/%f)' % (loss, lambda_1, lambda_2,
+                                                              self.iteration_counter, self.max_optimizer_iterations))
       
     def train(self, nIter): 
 
@@ -260,8 +268,8 @@ if __name__ == "__main__":
     timer.tic()
 
     do_noisy_data_case = False
-    load_existing_model = True
-    number_of_training_iterations = 200000
+    load_existing_model = False
+    number_of_training_iterations = 200000  # 200000
       
     N_train = 5000
     
@@ -307,8 +315,10 @@ if __name__ == "__main__":
     u_train = u[idx, :]
     v_train = v[idx, :]
 
-    pickled_model_filename = 'trained_model_nonoise_{}.pickle'.format(number_of_training_iterations)
-    saved_tf_model_filename = 'trained_model_nonoise_{}.tf'.format(number_of_training_iterations)
+    p_single_reference_node = p[1]
+
+    pickled_model_filename = 'trained_model_nonoise_{}_one_pressure_node.pickle'.format(number_of_training_iterations)
+    saved_tf_model_filename = 'trained_model_nonoise_{}_one_pressure_node.tf'.format(number_of_training_iterations)
 
     if load_existing_model:
         tf.reset_default_graph()
@@ -321,7 +331,7 @@ if __name__ == "__main__":
         tf.train.Saver().restore(model.sess, saved_tf_model_filename)
     else:
         # Training
-        model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
+        model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node)
         model.train(number_of_training_iterations)  # 200000
 
         # pickle
@@ -387,7 +397,7 @@ if __name__ == "__main__":
         v_train = v_train + noise*np.std(v_train)*np.random.randn(v_train.shape[0], v_train.shape[1])
 
         # Training
-        model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
+        # model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
         model.train(number_of_training_iterations)  # 200000
 
         lambda_1_value_noisy = model.sess.run(model.lambda_1)
