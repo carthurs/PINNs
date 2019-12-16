@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, '../../Utilities/')
 
 import tensorflow as tf
+from tensorflow.python import debug as tf_debug
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io
@@ -49,6 +50,7 @@ class PhysicsInformedNN:
         del odict['t_tf']
         del odict['u_tf']
         del odict['v_tf']
+        del odict['bias_tf']
         del odict['u_pred']
         del odict['v_pred']
         del odict['p_pred']
@@ -87,6 +89,9 @@ class PhysicsInformedNN:
                                                      log_device_placement=True,
                                                      gpu_options=gpu_options))
 
+        # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+        # self.sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+
         # These placeholders all have shape [None, 1], as self.x.shape[1] = 1.
         self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]])
         self.y_tf = tf.placeholder(tf.float32, shape=[None, self.y.shape[1]])
@@ -94,9 +99,11 @@ class PhysicsInformedNN:
 
         self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]])
         self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
+        self.bias_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
 
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, p_at_first_node =\
-                                                                            self.net_NS(self.x_tf, self.y_tf, self.t_tf)
+                                                                            self.net_NS(self.x_tf, self.y_tf, self.t_tf,
+                                                                                        self.bias_tf)
 
         if self.p_first_spacetime_node is not None:
             self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
@@ -114,7 +121,7 @@ class PhysicsInformedNN:
                         tf.reduce_sum(tf.square(self.f_u_pred)) + \
                         tf.reduce_sum(tf.square(self.f_v_pred))
 
-        self.max_optimizer_iterations = 50000  # 50000
+        self.max_optimizer_iterations = 50000  # 50000 ###iterations
         self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,
                                                                 method='L-BFGS-B',
                                                                 options={'maxiter': self.max_optimizer_iterations,
@@ -137,11 +144,18 @@ class PhysicsInformedNN:
         self.p_at_first_node = 0.0
         self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
         
-        X = np.concatenate([x, y, t], 1)
+        X = np.concatenate([x, y, t, np.ones(x.shape)], 1)
         
         self.lb = X.min(0)
         self.ub = X.max(0)
-                
+
+        # The above gives us a list of max and min in each of the 4 dimensions of X.
+        # in some cases (e.g. bias term of all ones), we'll get ub=lb, and later we
+        # have ub-lb in a denominator - handle this case here.
+        for index, (upper, lower) in enumerate(zip(self.ub, self.lb)):
+            if upper == lower:
+                self.ub[index] = self.ub[index] + 1.0
+
         self.X = X
         
         self.x = X[:,0:1]
@@ -163,7 +177,7 @@ class PhysicsInformedNN:
         weights = []
         biases = []
         num_layers = len(layers) 
-        for l in range(0,num_layers-1):
+        for l in range(0, num_layers-1):
             W = self.xavier_init(size=[layers[l], layers[l+1]])
             b = tf.Variable(tf.zeros([1,layers[l+1]], dtype=tf.float32), dtype=tf.float32)
             weights.append(W)
@@ -189,11 +203,14 @@ class PhysicsInformedNN:
         Y = tf.add(tf.matmul(H, W), b)
         return Y
         
-    def net_NS(self, x, y, t):
+    def net_NS(self, x, y, t, bias_term):
         lambda_1 = self.lambda_1
         lambda_2 = self.lambda_2
-        
-        psi_and_p = self.neural_net(tf.concat([x,y,t], 1), self.weights, self.biases)
+
+        # bias_term = tf.fill([tf.shape(x)[0], 1], 1.0)
+
+        psi_and_p = self.neural_net(tf.concat([x, y, t, bias_term], 1), self.weights, self.biases)
+
         psi = psi_and_p[:, 0]  # Seems to be that this is a scalar potential for the velocity, and that is what we predict
         p = psi_and_p[:, 1]  # Pressure field
 
@@ -220,7 +237,7 @@ class PhysicsInformedNN:
 
         # run the NN a second time on the first node (at x=1, y=-2, t=0) to get a reference pressure whose value we can
         # target in order to control the pressure field's absolute values;
-        psi_and_p_ignore_psi = self.neural_net(tf.constant([1.0, -2.0, 0.0], shape=(1, 3)), self.weights, self.biases)
+        psi_and_p_ignore_psi = self.neural_net(tf.constant([1.0, -2.0, 0.0, 1.0], shape=(1, 4)), self.weights, self.biases)
         self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
 
         return u, v, p, f_u, f_v, psi, self.p_at_first_node
@@ -241,7 +258,7 @@ class PhysicsInformedNN:
     def train(self, nIter): 
 
         tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
-                   self.u_tf: self.u, self.v_tf: self.v}
+                   self.u_tf: self.u, self.v_tf: self.v, self.bias_tf: np.ones(self.x.shape)}
 
         self.loss_history = np.zeros(self.max_optimizer_iterations + 1)  # 1 extra as a marker of where it switches between the optimizers
         self.loss_history_write_index = 0
@@ -279,7 +296,7 @@ class PhysicsInformedNN:
 
     def predict(self, x_star, y_star, t_star):
         
-        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.bias_tf: np.ones(x_star.shape)}
         
         u_star = self.sess.run(self.u_pred, tf_dict)
         v_star = self.sess.run(self.v_pred, tf_dict)
@@ -328,14 +345,14 @@ if __name__ == "__main__":
 
         do_noisy_data_case = False
         load_existing_model = False
-        use_pressure_node_in_training = True
-        discover_navier_stokes_parameters = False
-        number_of_training_iterations = 200000  # 200000
+        use_pressure_node_in_training = False
+        discover_navier_stokes_parameters = True
+        number_of_training_iterations = 200000  # 200000  ###iterations
 
         N_train = 5000
 
-        layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
-        # layers = [3, 20, 20, 20, 20, 20, 2]
+        layers = [4, 20, 20, 20, 20, 20, 20, 20, 20, 2]
+        # layers = [4, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 2]
 
         # Load Data
         data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
@@ -507,8 +524,8 @@ if __name__ == "__main__":
         x_vort = data_vort['x']
         y_vort = data_vort['y']
         w_vort = data_vort['w']
-        modes = np.asscalar(data_vort['modes'])
-        nel = np.asscalar(data_vort['nel'])
+        modes = data_vort['modes'].item()
+        nel = data_vort['nel'].item()
 
         xx_vort = np.reshape(x_vort, (modes+1,modes+1,nel), order = 'F')
         yy_vort = np.reshape(y_vort, (modes+1,modes+1,nel), order = 'F')
