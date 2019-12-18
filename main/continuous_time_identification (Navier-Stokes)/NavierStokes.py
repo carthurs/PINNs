@@ -20,6 +20,7 @@ import matplotlib.gridspec as gridspec
 import pickle
 import ttictoc
 import tqdm
+import warnings
 
 np.random.seed(1234)
 tf.set_random_seed(1234)
@@ -28,10 +29,16 @@ class PhysicsInformedNN:
 
     def __getstate__(self):
         odict = self.__dict__.copy()
-        del odict['sess']
-        del odict['optimizer_Adam']
-        del odict['optimizer']
-        del odict['train_op_Adam']
+        variables_to_delete = ['sess', 'optimizer_Adam', 'optimizer', 'train_op_Adam', 'weights', 'biases', 'lambda_1',
+                               'lambda_2', 'x_tf', 'y_tf', 't_tf', 'u_tf', 'v_tf', 'u_pred', 'v_pred', 'p_pred',
+                               'psi_pred', 'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node']
+
+        for variable_to_delete in variables_to_delete:
+            try:
+                del odict[variable_to_delete]
+            except KeyError:
+                warnings.warn('Variable {} not found during object pickling'.format(variable_to_delete))
+
         # del odict['lb']
         # del odict['ub']
         # del odict['X']
@@ -41,24 +48,6 @@ class PhysicsInformedNN:
         # del odict['u']
         # del odict['v']
         # del odict['layers']
-        del odict['weights']
-        del odict['biases']
-        del odict['lambda_1']
-        del odict['lambda_2']
-        del odict['x_tf']
-        del odict['y_tf']
-        del odict['t_tf']
-        del odict['u_tf']
-        del odict['v_tf']
-        del odict['bias_tf']
-        del odict['u_pred']
-        del odict['v_pred']
-        del odict['p_pred']
-        del odict['psi_pred']
-        del odict['f_u_pred']
-        del odict['f_v_pred']
-        del odict['loss']
-        del odict['p_at_first_node']
         return odict
 
     def __setstate__(self, odict):
@@ -99,11 +88,9 @@ class PhysicsInformedNN:
 
         self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]])
         self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
-        self.bias_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
 
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, p_at_first_node =\
-                                                                            self.net_NS(self.x_tf, self.y_tf, self.t_tf,
-                                                                                        self.bias_tf)
+                                                                            self.net_NS(self.x_tf, self.y_tf, self.t_tf)
 
         if self.p_first_spacetime_node is not None:
             self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
@@ -144,7 +131,7 @@ class PhysicsInformedNN:
         self.p_at_first_node = 0.0
         self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
         
-        X = np.concatenate([x, y, t, np.ones(x.shape)], 1)
+        X = np.concatenate([x, y, t], 1)
         
         self.lb = X.min(0)
         self.ub = X.max(0)
@@ -203,13 +190,13 @@ class PhysicsInformedNN:
         Y = tf.add(tf.matmul(H, W), b)
         return Y
         
-    def net_NS(self, x, y, t, bias_term):
+    def net_NS(self, x, y, t):
         lambda_1 = self.lambda_1
         lambda_2 = self.lambda_2
 
         # bias_term = tf.fill([tf.shape(x)[0], 1], 1.0)
 
-        psi_and_p = self.neural_net(tf.concat([x, y, t, bias_term], 1), self.weights, self.biases)
+        psi_and_p = self.neural_net(tf.concat([x, y, t], 1), self.weights, self.biases)
 
         psi = psi_and_p[:, 0]  # Seems to be that this is a scalar potential for the velocity, and that is what we predict
         p = psi_and_p[:, 1]  # Pressure field
@@ -237,7 +224,7 @@ class PhysicsInformedNN:
 
         # run the NN a second time on the first node (at x=1, y=-2, t=0) to get a reference pressure whose value we can
         # target in order to control the pressure field's absolute values;
-        psi_and_p_ignore_psi = self.neural_net(tf.constant([1.0, -2.0, 0.0, 1.0], shape=(1, 4)), self.weights, self.biases)
+        psi_and_p_ignore_psi = self.neural_net(tf.constant([1.0, -2.0, 0.0], shape=(1, 3)), self.weights, self.biases)
         self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
 
         return u, v, p, f_u, f_v, psi, self.p_at_first_node
@@ -258,7 +245,7 @@ class PhysicsInformedNN:
     def train(self, nIter): 
 
         tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
-                   self.u_tf: self.u, self.v_tf: self.v, self.bias_tf: np.ones(self.x.shape)}
+                   self.u_tf: self.u, self.v_tf: self.v}
 
         self.loss_history = np.zeros(self.max_optimizer_iterations + 1)  # 1 extra as a marker of where it switches between the optimizers
         self.loss_history_write_index = 0
@@ -296,7 +283,7 @@ class PhysicsInformedNN:
 
     def predict(self, x_star, y_star, t_star):
         
-        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.bias_tf: np.ones(x_star.shape)}
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
         
         u_star = self.sess.run(self.u_pred, tf_dict)
         v_star = self.sess.run(self.v_pred, tf_dict)
@@ -351,7 +338,7 @@ if __name__ == "__main__":
 
         N_train = 5000
 
-        layers = [4, 20, 20, 20, 20, 20, 20, 20, 20, 2]
+        layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
         # layers = [4, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 2]
 
         # Load Data
