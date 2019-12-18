@@ -4,7 +4,13 @@
 import sys
 sys.path.insert(0, '../../Utilities/')
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
+tf.get_logger().setLevel('INFO')
+tf.autograph.set_verbosity(1)
+tf.logging.set_verbosity(tf.logging.ERROR)
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io
@@ -19,44 +25,42 @@ import matplotlib.gridspec as gridspec
 import pickle
 import ttictoc
 import tqdm
+import TensorboardTools
+import sys
+import warnings
 
 np.random.seed(1234)
 tf.set_random_seed(1234)
+
+
+def array_extending_insert(array, index, value):
+    try:
+        array[index]  # just see if the array is long enough. Actual insertion is done in the finally: block
+    except IndexError:
+        array = np.concatenate((array, np.zeros(1000)))
+    finally:
+        try:
+            array[index] = value
+        except IndexError as index_exception:
+            raise type(index_exception)(str(index_exception) +
+                                        "Custom exception: array extension was insufficiently long."
+                                        ).with_traceback(sys.exc_info()[2])
+
+    return array
 
 class PhysicsInformedNN:
 
     def __getstate__(self):
         odict = self.__dict__.copy()
-        del odict['sess']
-        del odict['optimizer_Adam']
-        del odict['optimizer']
-        del odict['train_op_Adam']
-        # del odict['lb']
-        # del odict['ub']
-        # del odict['X']
-        # del odict['x']
-        # del odict['y']
-        # del odict['t']
-        # del odict['u']
-        # del odict['v']
-        # del odict['layers']
-        del odict['weights']
-        del odict['biases']
-        del odict['lambda_1']
-        del odict['lambda_2']
-        del odict['x_tf']
-        del odict['y_tf']
-        del odict['t_tf']
-        del odict['u_tf']
-        del odict['v_tf']
-        del odict['u_pred']
-        del odict['v_pred']
-        del odict['p_pred']
-        del odict['psi_pred']
-        del odict['f_u_pred']
-        del odict['f_v_pred']
-        del odict['loss']
-        del odict['p_at_first_node']
+        variables_to_remove = ['sess', 'optimizer_Adam', 'optimizer', 'train_op_Adam', 'weights', 'biases', 'lambda_1',
+                               'lambda_2', 'x_tf', 'y_tf', 't_tf', 'u_tf', 'v_tf', 'u_pred', 'v_pred', 'p_pred',
+                               'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node', 'loss_summary']
+
+        for variable_to_remove in variables_to_remove:
+            try:
+                del odict[variable_to_remove]
+            except KeyError:
+                warnings.warn('Variable {} not found during pickling of model.'.format(variable_to_remove))
         return odict
 
     def __setstate__(self, odict):
@@ -82,10 +86,10 @@ class PhysicsInformedNN:
             self.lambda_2 = tf.constant([0.01], dtype=tf.float32)
 
         # tf placeholders and graph
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
+        # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                     log_device_placement=True,
-                                                     gpu_options=gpu_options))
+                                                     log_device_placement=False))
+                                                     # gpu_options=gpu_options))
 
         # These placeholders all have shape [None, 1], as self.x.shape[1] = 1.
         self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]])
@@ -95,17 +99,17 @@ class PhysicsInformedNN:
         self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]])
         self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
 
-        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, p_at_first_node =\
+        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred =\
                                                                             self.net_NS(self.x_tf, self.y_tf, self.t_tf)
 
         if self.p_first_spacetime_node is not None:
             self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
                         tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
                         tf.reduce_sum(tf.square(self.f_u_pred)) + \
-                        tf.reduce_sum(tf.square(self.f_v_pred)) + \
-                        tf.square(p_at_first_node - 10.0)
+                        tf.reduce_sum(tf.square(self.f_v_pred)) #+ \
+                        # tf.square(p_at_first_node - 10.0)*0.00001
 
-            print("shape was: {}".format(p_at_first_node.shape))
+            # print("shape was: {}".format(p_at_first_node.shape))
 
             # tf.square(self.p_pred[1] - self.p_first_spacetime_node)
         else:
@@ -113,6 +117,8 @@ class PhysicsInformedNN:
                         tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
                         tf.reduce_sum(tf.square(self.f_u_pred)) + \
                         tf.reduce_sum(tf.square(self.f_v_pred))
+
+        self.loss_summary = tf.summary.scalar("loss", self.loss)
 
         self.max_optimizer_iterations = 50000  # 50000
         self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,
@@ -220,25 +226,22 @@ class PhysicsInformedNN:
 
         # run the NN a second time on the first node (at x=1, y=-2, t=0) to get a reference pressure whose value we can
         # target in order to control the pressure field's absolute values;
-        psi_and_p_ignore_psi = self.neural_net(tf.constant([1.0, -2.0, 0.0], shape=(1, 3)), self.weights, self.biases)
-        self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
+        # psi_and_p_ignore_psi = self.neural_net(tf.constant([1.0, -2.0, 0.0], shape=(1, 3)), self.weights, self.biases)
+        # self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
 
-        return u, v, p, f_u, f_v, psi, self.p_at_first_node
+        return u, v, p, f_u, f_v #, psi  #, self.p_at_first_node
     
     def callback(self, loss, lambda_1, lambda_2):
         self.iteration_counter += 1
 
-        try:
-            self.loss_history[self.loss_history_write_index] = loss
-        except IndexError:
-            self.loss_history = np.concatenate((self.loss_history, np.zeros(1000)))
-            self.loss_history[self.loss_history_write_index] = loss
+        self.loss_history = array_extending_insert(self.loss_history, self.loss_history_write_index, loss)
+
         self.loss_history_write_index += 1
 
         print('(A) Loss: %.3e, l1: %.3f, l2: %.5f (%f/%f)' % (loss, lambda_1, lambda_2,
                                                               self.iteration_counter, self.max_optimizer_iterations))
       
-    def train(self, nIter): 
+    def train(self, nIter, summary_writer, x_predict, y_predict, t_predict):
 
         tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
                    self.u_tf: self.u, self.v_tf: self.v}
@@ -253,9 +256,19 @@ class PhysicsInformedNN:
             # Print
             if it % 10 == 0:
                 elapsed = time.time() - start_time
-                loss_value = self.sess.run(self.loss, tf_dict)
-                self.loss_history[self.loss_history_write_index] = loss_value
+                loss_value, loss_summary_retrieved = self.sess.run([self.loss, self.loss_summary], tf_dict)
+                self.loss_history = array_extending_insert(self.loss_history, self.loss_history_write_index, loss_value)
                 self.loss_history_write_index += 1
+
+                summary_writer.add_summary(loss_summary_retrieved, it)
+
+                if it % 5000 == 0:
+                    # Show an image
+                    _, _, p_star = self.predict(x_predict, y_predict, t_predict)
+                    image = np.reshape(p_star, (-1, 50, 100, 1))
+                    summary_image_op = tf.summary.image("Snapshot", image)
+                    summary_image = self.sess.run(summary_image_op)
+                    summary_writer.add_summary(summary_image)
 
                 if self.discover_navier_stokes_parameters:
                     lambda_1_value = self.sess.run(self.lambda_1)
@@ -264,12 +277,14 @@ class PhysicsInformedNN:
                     lambda_1_value = -1.0
                     lambda_2_value = -1.0
 
-                reference_node_pressure = self.sess.run(self.p_at_first_node)
-                print('It: %d, (B) Loss: %.3e, l1: %.3f, l2: %.5f, Time: %.2f, %f' %
-                      (it, loss_value, lambda_1_value, lambda_2_value, elapsed, reference_node_pressure))
+                # reference_node_pressure = self.sess.run(self.p_at_first_node)
+                print('It: %d, (B) Loss: %.3e, l1: %.3f, l2: %.5f, Time: %.2f' %
+                      (it, loss_value, lambda_1_value, lambda_2_value, elapsed))
                 start_time = time.time()
 
-        self.loss_history[self.loss_history_write_index] = -1.0  # just a marker to see where the optimizers switched over
+        # just a marker to see where the optimizers switched over
+        self.loss_history = array_extending_insert(self.loss_history, self.loss_history_write_index, -1.0)
+
         self.loss_history_write_index += 1
             
         self.optimizer.minimize(self.sess,
@@ -284,9 +299,10 @@ class PhysicsInformedNN:
         u_star = self.sess.run(self.u_pred, tf_dict)
         v_star = self.sess.run(self.v_pred, tf_dict)
         p_star = self.sess.run(self.p_pred, tf_dict)
-        psi_pred = self.sess.run(self.psi_pred, tf_dict)
+        # psi_pred = self.sess.run(self.psi_pred, tf_dict)
         
-        return u_star, v_star, p_star, psi_pred
+        return u_star, v_star, p_star
+
 
     def getLossHistory(self):
         return self.loss_history
@@ -317,25 +333,38 @@ def axisEqual3D(ax):
     r = maxsize/4
     for ctr, dim in zip(centers, 'xyz'):
         getattr(ax, 'set_{}lim'.format(dim))(ctr - r, ctr + r)
-        
-        
+
+
 if __name__ == "__main__":
 
-    with tf.device("/gpu:0"):
+    tensorboard_log_directory = r'.\logs'
+
+    # List required to trigger evaluation of the generator returned by map
+    list(map(lambda filename: os.remove(tensorboard_log_directory + '/' + filename),
+        os.listdir(tensorboard_log_directory)))
+
+
+    # Remove any files from the current directory, which contain "tempstate" - these can break future simulations if
+    # left in-place.
+    list(map(lambda filename: os.remove(filename),
+            filter(lambda filename: 'tempstate' in filename, os.listdir('.'))
+             ))
+
+    with tf.device("/gpu:0"), TensorboardTools.TensorboardProcess(tensorboard_log_directory, 6006):
 
         timer = ttictoc.TicToc()
         timer.tic()
 
         do_noisy_data_case = False
         load_existing_model = False
-        use_pressure_node_in_training = True
-        discover_navier_stokes_parameters = False
+        use_pressure_node_in_training = False
+        discover_navier_stokes_parameters = True
         number_of_training_iterations = 200000  # 200000
 
         N_train = 5000
 
-        layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
-        # layers = [3, 20, 20, 20, 20, 20, 2]
+        layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]  # original
+        # layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 2]
 
         # Load Data
         data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
@@ -350,8 +379,8 @@ if __name__ == "__main__":
 
         # Rearrange Data - NOTE: the .T here is the transpose of the numpy array - it's not the same as the variable T in
         # the enclosing namespace
-        XX = np.tile(X_star[:, 0], (1, T)).T  # N x T
-        YY = np.tile(X_star[:, 1], (1, T)).T  # N x T
+        XX = np.tile(X_star[:, 0], (1, T))  # N x T
+        YY = np.tile(X_star[:, 1], (1, T))  # N x T
         TT = np.tile(t_star, (1, N)).T  # N x T
 
         UU = U_star[:,0,:]  # N x T
@@ -388,10 +417,17 @@ if __name__ == "__main__":
 
         # file_name_tag = "_no_scipy_optimiser"
 
+        # Test Data
+        snap = np.array([100])
+        x_star = X_star[:, 0:1]
+        y_star = X_star[:, 1:2]
+        t_star = TT[:, snap]
+
         file_name_tag = '{}_{}_layers'.format(file_name_tag, len(layers))
 
         pickled_model_filename = 'trained_model_nonoise_{}{}.pickle'.format(number_of_training_iterations, file_name_tag)
         saved_tf_model_filename = 'trained_model_nonoise_{}{}.tf'.format(number_of_training_iterations, file_name_tag)
+
 
         if load_existing_model:
             tf.reset_default_graph()
@@ -400,13 +436,18 @@ if __name__ == "__main__":
 
             model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
                                                          log_device_placement=True))
-
             tf.train.Saver().restore(model.sess, saved_tf_model_filename)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node,
                                       discover_navier_stokes_parameters)
-            model.train(number_of_training_iterations)  # 200000
+
+            summary_writer = tf.summary.FileWriter(tensorboard_log_directory, tf.get_default_graph())
+
+            model.train(number_of_training_iterations, summary_writer, x_star, y_star, t_star)  # 200000
+
+            summary_writer.flush()
+            summary_writer.close()
 
             # pickle
             try:
@@ -416,18 +457,13 @@ if __name__ == "__main__":
             except TypeError as e:
                 print("Error pickling model: model not saved!", e)
 
-        # Test Data
-        snap = np.array([100])
-        x_star = X_star[:,0:1]
-        y_star = X_star[:,1:2]
-        t_star = TT[:,snap]
 
         u_star = U_star[:,0,snap]
         v_star = U_star[:,1,snap]
         p_star = P_star[:,snap]
 
         # Prediction
-        u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
+        u_pred, v_pred, p_pred = model.predict(x_star, y_star, t_star)
         lambda_1_value = model.sess.run(model.lambda_1)
         lambda_2_value = model.sess.run(model.lambda_2)
 
@@ -452,7 +488,7 @@ if __name__ == "__main__":
         plot_solution(X_star, p_star, 4, "True Pressure")
         print("shapes: {} {}".format(p_star.shape, p_pred.shape))
         plot_solution(X_star, p_star[:, 0] - p_pred, 5, "Pressure Error")
-        plot_solution(X_star, psi_pred, 6, "Psi")
+        # plot_solution(X_star, psi_pred, 6, "Psi")
 
         np.savetxt('loss_history_{}_{}_{}.dat'.format(number_of_training_iterations, model.getMaxOptimizerIterations(),
                                                       loss_history_file_nametag), model.getLossHistory())
