@@ -346,7 +346,7 @@ if __name__ == "__main__":
         do_noisy_data_case = False
         load_existing_model = False
         use_pressure_node_in_training = False
-        discover_navier_stokes_parameters = True
+        discover_navier_stokes_parameters = False
         number_of_training_iterations = 200000  # 200000  ###iterations
 
         N_train = 5000
@@ -367,8 +367,8 @@ if __name__ == "__main__":
 
         # Rearrange Data - NOTE: the .T here is the transpose of the numpy array - it's not the same as the variable T in
         # the enclosing namespace
-        XX = np.tile(X_star[:, 0], (1, T)).T  # N x T
-        YY = np.tile(X_star[:, 1], (1, T)).T  # N x T
+        XX = np.tile(X_star[:, 0], (1, T))  # N x T
+        YY = np.tile(X_star[:, 1], (1, T))  # N x T
         TT = np.tile(t_star, (1, N)).T  # N x T
 
         UU = U_star[:,0,:]  # N x T
