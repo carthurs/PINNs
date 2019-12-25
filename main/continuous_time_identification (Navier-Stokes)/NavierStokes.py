@@ -69,7 +69,7 @@ class PhysicsInformedNN:
 
         # support for missing variable in old save files
         self.discover_navier_stokes_parameters = False
-        self.p_first_spacetime_node = None
+        # self.p_reference_point = None
         self.p_at_first_node = 3.141592
 
         self.finalise_state_setup()
@@ -106,12 +106,12 @@ class PhysicsInformedNN:
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node =\
                                                                             self.net_NS(self.x_tf, self.y_tf, self.t_tf)
 
-        if self.p_first_spacetime_node is not None:
+        if self.p_reference_point is not None:
             self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
                         tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
                         tf.reduce_sum(tf.square(self.f_u_pred)) + \
                         tf.reduce_sum(tf.square(self.f_v_pred)) + \
-                        tf.square(self.p_at_first_node[0] - self.p_first_spacetime_node)
+                        tf.square(self.p_at_first_node[0] - self.p_reference_point[3])
         else:
             self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
                         tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
@@ -161,7 +161,7 @@ class PhysicsInformedNN:
         self.y = X[:,1:2]
         self.t = X[:,2:3]
 
-        self.p_first_spacetime_node = p_reference_point
+        self.p_reference_point = p_reference_point
 
         self.u = u
         self.v = v
@@ -236,7 +236,7 @@ class PhysicsInformedNN:
 
         # run the NN a second time on the first node (at x=1, y=-2, t=0) to get a reference pressure whose value we can
         # target in order to control the pressure field's absolute values;
-        psi_and_p_ignore_psi = self.neural_net(tf.constant([1.0, -2.0, 0.0], shape=(1, 3)), self.weights, self.biases)
+        psi_and_p_ignore_psi = self.neural_net(tf.constant(self.p_reference_point[0:3], shape=(1, 3)), self.weights, self.biases)
         self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
 
         return u, v, p, f_u, f_v, psi, self.p_at_first_node
@@ -372,7 +372,7 @@ if __name__ == "__main__":
         load_existing_model = False
         use_pressure_node_in_training = True
         discover_navier_stokes_parameters = True
-        number_of_training_iterations = 15000  # 200000
+        number_of_training_iterations = 200000  # 200000
 
         N_train = 5000
 
@@ -419,22 +419,25 @@ if __name__ == "__main__":
         u_train = u[idx, :]
         v_train = v[idx, :]
 
-        if use_pressure_node_in_training:
-            file_name_tag = "_zero_ref_pressure.pickle"
-            p_single_reference_node = 0.0  # p[995000+1] # on the last time slice
-            loss_history_file_nametag = "single_reference_pressure"
-        else:
-            file_name_tag = ""
-            p_single_reference_node = None
-            loss_history_file_nametag = "no_reference_pressure"
-
-        # file_name_tag = "_no_scipy_optimiser"
-
         # Test Data
         snap = np.array([100])
         x_star = X_star[:, 0:1]
         y_star = X_star[:, 1:2]
         t_star = TT[:, snap]
+
+        u_star = U_star[:,0,snap]
+        v_star = U_star[:,1,snap]
+        p_star = P_star[:,snap]
+
+        if use_pressure_node_in_training:
+            file_name_tag = "_zero_ref_pressure.pickle"
+            # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
+            p_single_reference_node = list(map(lambda x: x.item(), [x_star[0], y_star[0], t_star[0], p_star[0]]))
+            loss_history_file_nametag = "single_reference_pressure"
+        else:
+            file_name_tag = ""
+            p_single_reference_node = None
+            loss_history_file_nametag = "no_reference_pressure"
 
         file_name_tag = '{}_{}_layers'.format(file_name_tag, len(layers))
 
@@ -470,16 +473,6 @@ if __name__ == "__main__":
             except TypeError as e:
                 print("Error pickling model: model not saved!", e)
 
-        # Test Data
-        snap = np.array([100])
-        x_star = X_star[:,0:1]
-        y_star = X_star[:,1:2]
-        t_star = TT[:,snap]
-
-        u_star = U_star[:,0,snap]
-        v_star = U_star[:,1,snap]
-        p_star = P_star[:,snap]
-
         # Prediction
         u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
         lambda_1_value = model.sess.run(model.lambda_1)
@@ -514,7 +507,7 @@ if __name__ == "__main__":
         np.savetxt("p_pred_saved.dat", p_pred)
         np.savetxt("X_star_saved.dat", X_star)
 
-        print("Pressure at 2nd node: True: {}, Predicted: {}, Difference: {}". format(p_star[1], p_pred[1], p_star[1]-p_pred[1]))
+        print("Pressure at 2nd node: True: {}, Predicted: {}, Difference: {}". format(p_star[0], p_pred[0], p_star[0]-p_pred[0]))
 
         # Predict for plotting
         lb = X_star.min(0)
