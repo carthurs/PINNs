@@ -29,6 +29,7 @@ import tqdm
 import TensorboardTools
 import sys
 import warnings
+import VtkDataReader
 
 np.random.seed(1234)
 tf.set_random_seed(1234)
@@ -83,8 +84,10 @@ class PhysicsInformedNN:
             self.lambda_1 = tf.Variable([0.0], dtype=tf.float32)
             self.lambda_2 = tf.Variable([0.0], dtype=tf.float32)
         else:
-            self.lambda_1 = tf.constant([1.0], dtype=tf.float32)
-            self.lambda_2 = tf.constant([0.01], dtype=tf.float32)
+            self.lambda_1 = tf.constant([0.004], dtype=tf.float32)
+            self.lambda_2 = tf.constant([0.00106], dtype=tf.float32)
+            # self.lambda_1 = tf.constant([1.0], dtype=tf.float32)
+            # self.lambda_2 = tf.constant([0.01], dtype=tf.float32)
 
         # tf placeholders and graph
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
@@ -316,7 +319,7 @@ class PhysicsInformedNN:
     def getLossHistory(self):
         return self.loss_history
 
-def plot_solution(X_star, u_star, index, title):
+def plot_solution(X_star, u_star, index, title, range=[None, None]):
 
     lb = X_star.min(0)
     ub = X_star.max(0)
@@ -328,7 +331,7 @@ def plot_solution(X_star, u_star, index, title):
     U_star = griddata(X_star, u_star.flatten(), (X, Y), method='cubic')
 
     plt.figure(index)
-    plt.pcolor(X,Y,U_star, cmap = 'jet')
+    plt.pcolor(X,Y,U_star, cmap = 'jet', vmin=range[0], vmax=range[1])
     plt.colorbar()
     plt.title(title)
     plt.savefig(title.replace(" ", "_") + '.png')
@@ -371,16 +374,21 @@ if __name__ == "__main__":
         do_noisy_data_case = False
         load_existing_model = False
         use_pressure_node_in_training = True
-        discover_navier_stokes_parameters = True
+        discover_navier_stokes_parameters = False
         number_of_training_iterations = 200000  # 200000
 
-        N_train = 5000
+        N_train = 500
 
         layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
         # Load Data
-        data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
+        # data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
+
+        data_directory = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\\'
+        vtu_data_file_name = 'tube10mm_diameter_pt05mesh'
+        data = VtkDataReader.VtkDataReader(data_directory + vtu_data_file_name + '.vtu'
+                                                   ).mimic_pinns_input_data()
 
         U_star = data['U_star']  # N x 2 x T
         P_star = data['p_star']  # N x T
@@ -420,7 +428,8 @@ if __name__ == "__main__":
         v_train = v[idx, :]
 
         # Test Data
-        snap = np.array([100])
+        snap = np.array([int(np.floor(T/2))])
+        print("snap", snap)
         x_star = X_star[:, 0:1]
         y_star = X_star[:, 1:2]
         t_star = TT[:, snap]
@@ -430,14 +439,14 @@ if __name__ == "__main__":
         p_star = P_star[:,snap]
 
         if use_pressure_node_in_training:
-            file_name_tag = "_zero_ref_pressure.pickle"
+            file_name_tag = vtu_data_file_name + "_zero_ref_pressure.pickle"
             # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
             p_single_reference_node = list(map(lambda x: x.item(), [x_star[0], y_star[0], t_star[0], p_star[0]]))
-            loss_history_file_nametag = "single_reference_pressure"
+            loss_history_file_nametag = vtu_data_file_name + "_single_reference_pressure"
         else:
-            file_name_tag = ""
+            file_name_tag = vtu_data_file_name + ""
             p_single_reference_node = None
-            loss_history_file_nametag = "no_reference_pressure"
+            loss_history_file_nametag = vtu_data_file_name + "_no_reference_pressure"
 
         file_name_tag = '{}_{}_layers'.format(file_name_tag, len(layers))
 
@@ -491,6 +500,7 @@ if __name__ == "__main__":
         print('Error p: %e' % (error_p))
         print('Error l1: %.5f%%' % (error_lambda_1))
         print('Error l2: %.5f%%' % (error_lambda_2))
+        print(lambda_1_value, lambda_2_value)
 
         # Plot Results
         plot_solution(X_star, u_pred, 1, "Predicted Velocity U")
