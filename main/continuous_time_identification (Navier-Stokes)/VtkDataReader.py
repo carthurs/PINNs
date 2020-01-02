@@ -27,6 +27,7 @@ class VtkDataReader(object):
 
         raw_pressure_data = self.get_data_reader_as_numpy_array('p')
         pressure_data = np.expand_dims(raw_pressure_data, axis=1)  # because the NS code expects a time axis too
+        pressure_data = pressure_data * 0.00106  # fix screwup in Nektar++
         return_data['p_star'] = pressure_data
 
         time_data = np.zeros(shape=(1, 1))
@@ -78,12 +79,12 @@ class VtkDataReader(object):
 
 if __name__ == '__main__':
     # Just a test / usage example - no actual functionality
-    my_reader = VtkDataReader(r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube10mm_diameter_pt05mesh.vtu')
+    my_reader = VtkDataReader(r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu')
     print(my_reader.get_data_reader_as_numpy_array('u'))
     print(my_reader.get_point_coordinates()[:,0:2])
     pinns_input_format_data = my_reader.mimic_pinns_input_data()
 
     NavierStokes.plot_solution(pinns_input_format_data['X_star'], pinns_input_format_data['U_star'][:, 0, 0], 1,
-                               "True Velocity U", range=[-0.4, 1.0])
+                               "True Velocity U", colour_range=[0.0, 1.0])
     NavierStokes.plot_solution(pinns_input_format_data['X_star'], pinns_input_format_data['U_star'][:, 1, 0], 2,
-                               "True Velocity V", range=[-0.23, 0.185])
+                               "True Velocity V", colour_range=[-0.00015, 0.0001])

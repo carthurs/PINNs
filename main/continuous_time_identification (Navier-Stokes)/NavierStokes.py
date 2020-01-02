@@ -56,7 +56,9 @@ class PhysicsInformedNN:
         odict = self.__dict__.copy()
         variables_to_remove = ['sess', 'optimizer_Adam', 'optimizer', 'train_op_Adam', 'weights', 'biases', 'lambda_1',
                                'lambda_2', 'x_tf', 'y_tf', 't_tf', 'u_tf', 'v_tf', 'u_pred', 'v_pred', 'p_pred',
-                               'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node', 'loss_summary', 'psi_pred']
+                               'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node', 'loss_summary', 'psi_pred',
+                               'loss_velocity_summary', 'loss_ns_summary', 'loss_navier_stokes', 'loss_velocity',
+                               'loss_pressure_node', 'other_summary_scalars', 'loss_pieces_out']
 
         for variable_to_remove in variables_to_remove:
             try:
@@ -84,10 +86,8 @@ class PhysicsInformedNN:
             self.lambda_1 = tf.Variable([0.0], dtype=tf.float32)
             self.lambda_2 = tf.Variable([0.0], dtype=tf.float32)
         else:
-            self.lambda_1 = tf.constant([0.004], dtype=tf.float32)
-            self.lambda_2 = tf.constant([0.00106], dtype=tf.float32)
-            # self.lambda_1 = tf.constant([1.0], dtype=tf.float32)
-            # self.lambda_2 = tf.constant([0.01], dtype=tf.float32)
+            self.lambda_1 = tf.constant([self.true_density], dtype=tf.float32)
+            self.lambda_2 = tf.constant([self.true_viscosity], dtype=tf.float32)
 
         # tf placeholders and graph
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
@@ -106,22 +106,38 @@ class PhysicsInformedNN:
         self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]])
         self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
 
-        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node =\
+        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node, self.loss_pieces_out =\
                                                                             self.net_NS(self.x_tf, self.y_tf, self.t_tf)
 
+        navier_stokes_loss_scaling = 100
         if self.p_reference_point is not None:
-            self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
-                        tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
-                        tf.reduce_sum(tf.square(self.f_u_pred)) + \
-                        tf.reduce_sum(tf.square(self.f_v_pred)) + \
-                        tf.square(self.p_at_first_node[0] - self.p_reference_point[3])
+            self.loss_velocity = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
+                                 tf.reduce_sum(tf.square(self.v_tf - self.v_pred))
+            self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
+                                      tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
+            self.loss_pressure_node = tf.square(self.p_at_first_node[0] - self.p_reference_point[3])
+
+            self.loss = self.loss_velocity + self.loss_navier_stokes + self.loss_pressure_node
         else:
-            self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
-                        tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
-                        tf.reduce_sum(tf.square(self.f_u_pred)) + \
-                        tf.reduce_sum(tf.square(self.f_v_pred))
+            self.loss_velocity = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
+                                 tf.reduce_sum(tf.square(self.v_tf - self.v_pred))
+            self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
+                                      tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
+            self.loss = self.loss_velocity + self.loss_navier_stokes
 
         self.loss_summary = tf.summary.scalar("loss", self.loss)
+        self.loss_velocity_summary = tf.summary.scalar("loss_velocity", self.loss_velocity)
+        self.loss_ns_summary = tf.summary.scalar("loss_navier_stokes",
+                                              self.loss_navier_stokes/(navier_stokes_loss_scaling**2))
+
+        # self.loss_pieces_out = [u * v_x, v * v_y, p_y, v_xx, v_yy]
+        self.other_summary_scalars = []
+        self.other_summary_scalars.append(tf.summary.scalar("u*v_x", tf.reduce_mean(self.loss_pieces_out[0])))
+        self.other_summary_scalars.append(tf.summary.scalar("v*v_y", tf.reduce_mean(self.loss_pieces_out[1])))
+        self.other_summary_scalars.append(tf.summary.scalar("p_y", tf.reduce_mean(self.loss_pieces_out[2])))
+        self.other_summary_scalars.append(tf.summary.scalar("v_xx", tf.reduce_mean(self.loss_pieces_out[3])))
+        self.other_summary_scalars.append(tf.summary.scalar("v_yy", tf.reduce_mean(self.loss_pieces_out[4])))
+
 
         self.max_optimizer_iterations = 50000  # 50000
         self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,
@@ -142,7 +158,8 @@ class PhysicsInformedNN:
         return self.max_optimizer_iterations
 
     # Initialize the class
-    def __init__(self, x, y, t, u, v, layers, p_reference_point, discover_navier_stokes_parameters):
+    def __init__(self, x, y, t, u, v, layers, p_reference_point, discover_navier_stokes_parameters,
+                 true_viscosity_in, true_density_in):
         self.p_at_first_node = 0.0
         self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
 
@@ -172,6 +189,9 @@ class PhysicsInformedNN:
         self.layers = layers
 
         self.iteration_counter = 0
+
+        self.true_viscosity = true_viscosity_in
+        self.true_density = true_density_in
 
         self.finalise_state_setup()
 
@@ -219,13 +239,16 @@ class PhysicsInformedNN:
         u = tf.gradients(psi, y)[0]
         v = -tf.gradients(psi, x)[0]
 
-        u_t = tf.gradients(u, t)[0]
+        unsteady_flow = False
+        if unsteady_flow:
+            u_t = tf.gradients(u, t)[0]
         u_x = tf.gradients(u, x)[0]
         u_y = tf.gradients(u, y)[0]
         u_xx = tf.gradients(u_x, x)[0]
         u_yy = tf.gradients(u_y, y)[0]
 
-        v_t = tf.gradients(v, t)[0]
+        if unsteady_flow:
+            v_t = tf.gradients(v, t)[0]
         v_x = tf.gradients(v, x)[0]
         v_y = tf.gradients(v, y)[0]
         v_xx = tf.gradients(v_x, x)[0]
@@ -234,15 +257,21 @@ class PhysicsInformedNN:
         p_x = tf.gradients(p, x)[0]
         p_y = tf.gradients(p, y)[0]
 
-        f_u = u_t + lambda_1*(u*u_x + v*u_y) + p_x - lambda_2*(u_xx + u_yy)
-        f_v = v_t + lambda_1*(u*v_x + v*v_y) + p_y - lambda_2*(v_xx + v_yy)
+        if unsteady_flow:
+            f_u = u_t + lambda_1 * (u * u_x + v * u_y) + p_x - lambda_2 * (u_xx + u_yy)
+            f_v = v_t + lambda_1 * (u * v_x + v * v_y) + p_y - lambda_2 * (v_xx + v_yy)
+        else:
+            f_u = lambda_1 * (u * u_x + v * u_y) + p_x - lambda_2 * (u_xx + u_yy)
+            f_v = lambda_1 * (u * v_x + v * v_y) + p_y - lambda_2 * (v_xx + v_yy)
+
+        loss_pieces = [u[0]*v_x[0], v[0]*v_y[0], p_y[0], v_xx[0], v_yy[0]]
 
         # run the NN a second time on the first node (at x=1, y=-2, t=0) to get a reference pressure whose value we can
         # target in order to control the pressure field's absolute values;
         psi_and_p_ignore_psi = self.neural_net(tf.constant(self.p_reference_point[0:3], shape=(1, 3)), self.weights, self.biases)
         self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
 
-        return u, v, p, f_u, f_v, psi, self.p_at_first_node
+        return u, v, p, f_u, f_v, psi, self.p_at_first_node, loss_pieces
 
     def callback(self, loss, lambda_1, lambda_2):
         self.iteration_counter += 1
@@ -269,11 +298,18 @@ class PhysicsInformedNN:
             # Print
             if it % 10 == 0:
                 elapsed = time.time() - start_time
-                loss_value, loss_summary_retrieved = self.sess.run([self.loss, self.loss_summary], tf_dict)
+                loss_value, loss_summary_retrieved, loss_vel_summary_retrieved, loss_ns_summary_retrieved, other_summary_scalars_retrieved = \
+                                                    self.sess.run([self.loss, self.loss_summary,
+                                                                  self.loss_velocity_summary, self.loss_ns_summary, self.other_summary_scalars],
+                                                                  tf_dict)
                 self.loss_history = array_extending_insert(self.loss_history, self.loss_history_write_index, loss_value)
                 self.loss_history_write_index += 1
 
                 summary_writer.add_summary(loss_summary_retrieved, it)
+                summary_writer.add_summary(loss_vel_summary_retrieved, it)
+                summary_writer.add_summary(loss_ns_summary_retrieved, it)
+                for summary in other_summary_scalars_retrieved:
+                    summary_writer.add_summary(summary, it)
 
                 if it % 5000 == 0:
                     # Show an image
@@ -287,8 +323,8 @@ class PhysicsInformedNN:
                     lambda_1_value = self.sess.run(self.lambda_1)
                     lambda_2_value = self.sess.run(self.lambda_2)
                 else:
-                    lambda_1_value = -1.0
-                    lambda_2_value = -1.0
+                    lambda_1_value = self.true_density
+                    lambda_2_value = self.true_viscosity
 
                 reference_node_pressure = self.sess.run(self.p_at_first_node)
                 print('It: %d, (B) Loss: %.3e, l1: %.3f, l2: %.5f, Time: %.2f, %f' %
@@ -305,6 +341,15 @@ class PhysicsInformedNN:
                                 fetches = [self.loss, self.lambda_1, self.lambda_2],
                                 loss_callback = self.callback)
 
+    def call_just_LBGDSF_optimizer(self):
+        tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
+                   self.u_tf: self.u, self.v_tf: self.v}
+
+        self.optimizer.minimize(self.sess,
+                                feed_dict=tf_dict,
+                                fetches=[self.loss, self.lambda_1, self.lambda_2],
+                                loss_callback=self.callback)
+
     def predict(self, x_star, y_star, t_star):
 
         tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
@@ -319,19 +364,19 @@ class PhysicsInformedNN:
     def getLossHistory(self):
         return self.loss_history
 
-def plot_solution(X_star, u_star, index, title, range=[None, None]):
 
+def plot_solution(X_star, u_star, index, title, colour_range=(None, None)):
     lb = X_star.min(0)
     ub = X_star.max(0)
     nn = 200
     x = np.linspace(lb[0], ub[0], nn)
     y = np.linspace(lb[1], ub[1], nn)
-    X, Y = np.meshgrid(x,y)
+    X, Y = np.meshgrid(x, y)
 
     U_star = griddata(X_star, u_star.flatten(), (X, Y), method='cubic')
 
     plt.figure(index)
-    plt.pcolor(X,Y,U_star, cmap = 'jet', vmin=range[0], vmax=range[1])
+    plt.pcolor(X, Y, U_star, cmap='jet', vmin=colour_range[0], vmax=colour_range[1])
     plt.colorbar()
     plt.title(title)
     plt.savefig(title.replace(" ", "_") + '.png')
@@ -339,12 +384,34 @@ def plot_solution(X_star, u_star, index, title, range=[None, None]):
 
 def axisEqual3D(ax):
     extents = np.array([getattr(ax, 'get_{}lim'.format(dim))() for dim in 'xyz'])
-    sz = extents[:,1] - extents[:,0]
+    sz = extents[:, 1] - extents[:, 0]
     centers = np.mean(extents, axis=1)
     maxsize = max(abs(sz))
     r = maxsize/4
     for ctr, dim in zip(centers, 'xyz'):
         getattr(ax, 'set_{}lim'.format(dim))(ctr - r, ctr + r)
+
+
+def run_training(tensorboard_log_directory_in, model_in, number_of_training_iterations_in, x_star_in, y_star_in,
+                 t_star_in, pickled_model_filename_in, saved_tf_model_filename_in):
+    summary_writer = tf.summary.FileWriter(tensorboard_log_directory_in, tf.get_default_graph())
+
+    model_in.train(number_of_training_iterations_in, summary_writer, x_star_in, y_star_in, t_star_in)
+
+    summary_writer.flush()
+    summary_writer.close()
+
+    # pickle
+    try:
+        with open(pickled_model_filename_in, 'wb') as pickled_model_file:
+            pickle.dump(model_in, pickled_model_file)
+        try:
+            os.remove(saved_tf_model_filename_in + '.index')
+        except FileNotFoundError:
+            pass
+        tf.train.Saver().save(model_in.sess, saved_tf_model_filename_in)
+    except TypeError as e:
+        print("Error pickling model: model not saved!", e)
 
 
 if __name__ == "__main__":
@@ -375,9 +442,11 @@ if __name__ == "__main__":
         load_existing_model = False
         use_pressure_node_in_training = True
         discover_navier_stokes_parameters = False
+        true_viscosity_value = 0.004  # 0.01
+        true_density_value = 0.00106  # 1.0
         number_of_training_iterations = 200000  # 200000
 
-        N_train = 500
+        N_train = 5000
 
         layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
         # layers = [3, 20, 20, 20, 20, 20, 2]
@@ -385,7 +454,7 @@ if __name__ == "__main__":
         # Load Data
         # data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
 
-        data_directory = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\\'
+        data_directory = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\\'
         vtu_data_file_name = 'tube10mm_diameter_pt05mesh'
         data = VtkDataReader.VtkDataReader(data_directory + vtu_data_file_name + '.vtu'
                                                    ).mimic_pinns_input_data()
@@ -438,15 +507,16 @@ if __name__ == "__main__":
         v_star = U_star[:,1,snap]
         p_star = P_star[:,snap]
 
+        additional_nametag = 'test_pressure_times_rho_in_reader'  #'_30-70x2-8_'
         if use_pressure_node_in_training:
-            file_name_tag = vtu_data_file_name + "_zero_ref_pressure.pickle"
+            file_name_tag = vtu_data_file_name + additional_nametag + "_zero_ref_pressure.pickle"
             # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
             p_single_reference_node = list(map(lambda x: x.item(), [x_star[0], y_star[0], t_star[0], p_star[0]]))
-            loss_history_file_nametag = vtu_data_file_name + "_single_reference_pressure"
+            loss_history_file_nametag = vtu_data_file_name + additional_nametag + "_single_reference_pressure"
         else:
-            file_name_tag = vtu_data_file_name + ""
+            file_name_tag = vtu_data_file_name + additional_nametag + ""
             p_single_reference_node = None
-            loss_history_file_nametag = vtu_data_file_name + "_no_reference_pressure"
+            loss_history_file_nametag = vtu_data_file_name + additional_nametag + "_no_reference_pressure"
 
         file_name_tag = '{}_{}_layers'.format(file_name_tag, len(layers))
 
@@ -462,25 +532,17 @@ if __name__ == "__main__":
                                                          log_device_placement=False))
 
             tf.train.Saver().restore(model.sess, saved_tf_model_filename)
+
+            # model.call_just_LBGDSF_optimizer()
+            run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
+                         t_star, pickled_model_filename, saved_tf_model_filename)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node,
-                                      discover_navier_stokes_parameters)
+                                      discover_navier_stokes_parameters, true_viscosity_value, true_density_value)
 
-            summary_writer = tf.summary.FileWriter(tensorboard_log_directory, tf.get_default_graph())
-
-            model.train(number_of_training_iterations, summary_writer, x_star, y_star, t_star)  # 200000
-
-            summary_writer.flush()
-            summary_writer.close()
-
-            # pickle
-            try:
-                with open(pickled_model_filename, 'wb') as pickled_model_file:
-                    pickle.dump(model, pickled_model_file)
-                tf.train.Saver().save(model.sess, saved_tf_model_filename)
-            except TypeError as e:
-                print("Error pickling model: model not saved!", e)
+            run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
+                 t_star, pickled_model_filename, saved_tf_model_filename)
 
         # Prediction
         u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
@@ -492,8 +554,8 @@ if __name__ == "__main__":
         error_v = np.linalg.norm(v_star-v_pred, 2)/np.linalg.norm(v_star, 2)
         error_p = np.linalg.norm(p_star-p_pred, 2)/np.linalg.norm(p_star, 2)
 
-        error_lambda_1 = np.abs(lambda_1_value - 1.0)*100
-        error_lambda_2 = np.abs(lambda_2_value - 0.01)/0.01 * 100
+        error_lambda_1 = np.abs(lambda_1_value - true_density_value)/true_density_value*100
+        error_lambda_2 = np.abs(lambda_2_value - true_viscosity_value)/true_viscosity_value * 100
 
         print('Error u: %e' % (error_u))
         print('Error v: %e' % (error_v))
