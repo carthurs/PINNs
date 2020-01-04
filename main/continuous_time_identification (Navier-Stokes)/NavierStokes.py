@@ -439,6 +439,7 @@ if __name__ == "__main__":
         timer.tic()
 
         do_noisy_data_case = False
+        plot_lots = True
         load_existing_model = False
         use_pressure_node_in_training = True
         discover_navier_stokes_parameters = False
@@ -456,8 +457,23 @@ if __name__ == "__main__":
 
         data_directory = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\\'
         vtu_data_file_name = 'tube10mm_diameter_pt05mesh'
-        data = VtkDataReader.VtkDataReader(data_directory + vtu_data_file_name + '.vtu'
-                                                   ).mimic_pinns_input_data()
+        # data = VtkDataReader.VtkDataReader.from_single_data_file(data_directory + vtu_data_file_name + '.vtu'
+        #                                            ).get_pinns_format_input_data()
+
+        data_reader = VtkDataReader.MultipleFileReader()
+        base_base_data_directory = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\\'
+        file_names_and_parameter_values = [(data_directory + vtu_data_file_name, 1.0),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_doubleInflow\\' + vtu_data_file_name, 2.0),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_1pt5Inflow\\' + vtu_data_file_name, 1.5),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_2pt5Inflow\\' + vtu_data_file_name, 2.5),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt0Inflow\\' + vtu_data_file_name, 3.0),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_4pt0Inflow\\' + vtu_data_file_name, 4.0)]
+        for fn_and_pv in file_names_and_parameter_values:
+            data_reader.add_file_name("{}.vtu".format(fn_and_pv[0]), fn_and_pv[1])
+
+        # For now, we recycle the T dimension as the generic parameter dimension for steady flow data. Can
+        # adjust this later.
+        data = data_reader.get_pinns_format_input_data()
 
         U_star = data['U_star']  # N x 2 x T
         P_star = data['p_star']  # N x T
@@ -507,7 +523,7 @@ if __name__ == "__main__":
         v_star = U_star[:,1,snap]
         p_star = P_star[:,snap]
 
-        additional_nametag = 'test_pressure_times_rho_in_reader'  #'_30-70x2-8_'
+        additional_nametag = 'working_500TrainingDatapoints'  #'_30-70x2-8_'
         if use_pressure_node_in_training:
             file_name_tag = vtu_data_file_name + additional_nametag + "_zero_ref_pressure.pickle"
             # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
@@ -534,8 +550,8 @@ if __name__ == "__main__":
             tf.train.Saver().restore(model.sess, saved_tf_model_filename)
 
             # model.call_just_LBGDSF_optimizer()
-            run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
-                         t_star, pickled_model_filename, saved_tf_model_filename)
+            # run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
+            #              t_star, pickled_model_filename, saved_tf_model_filename)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node,
@@ -545,6 +561,16 @@ if __name__ == "__main__":
                  t_star, pickled_model_filename, saved_tf_model_filename)
 
         # Prediction
+        if plot_lots:
+            plot_id = 10
+            for t_parameter in [1, 1.5, 2, 2.5, 3, 4, 3.5, 4.5, 2.2, 1.1, 0.5, -0.5, 5.0, 0.0]:
+                t_star = t_star * 0 + t_parameter
+                u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
+                plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
+                plot_solution(X_star, u_pred, plot_id, plot_title)
+                plot_id += 1
+
+        t_star = t_star * 0 + 3.5
         u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
         lambda_1_value = model.sess.run(model.lambda_1)
         lambda_2_value = model.sess.run(model.lambda_2)
