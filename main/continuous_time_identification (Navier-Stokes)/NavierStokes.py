@@ -79,7 +79,7 @@ class PhysicsInformedNN:
 
     def finalise_state_setup(self):
         # Initialize NN
-        self.weights, self.biases = self.initialize_NN(layers)
+        self.weights, self.biases = self.initialize_NN(self.layers)
 
         if self.discover_navier_stokes_parameters:
             # Initialize parameters
@@ -379,6 +379,23 @@ class PhysicsInformedNN:
     def getLossHistory(self):
         return self.loss_history
 
+    def get_loss(self, x_star, y_star, t_star):
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
+        naver_stokes_loss = self.sess.run(self.loss_navier_stokes, tf_dict)
+        return naver_stokes_loss
+
+
+def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, savefile_nametag=None):
+    plt.figure(index)
+    plt.plot(x_data, y_data)
+    if scatter_x is not None and scatter_y is not None:
+        plt.scatter(scatter_x, scatter_y)
+    plt.title(title)
+    plt.yscale('log')
+    if savefile_nametag is not None:
+        title += savefile_nametag
+    plt.savefig(title.replace(" ", "_") + '.png')
+
 
 def plot_solution(X_star, u_star, index, title, colour_range=(None, None)):
     lb = X_star.min(0)
@@ -458,7 +475,7 @@ if __name__ == "__main__":
 
         do_noisy_data_case = False
         plot_lots = True
-        load_existing_model = False
+        load_existing_model = True
         use_pressure_node_in_training = True
         discover_navier_stokes_parameters = False
         true_viscosity_value = 0.004  # 0.01
