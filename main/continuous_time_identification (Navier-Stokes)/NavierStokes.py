@@ -445,11 +445,12 @@ if __name__ == "__main__":
         discover_navier_stokes_parameters = False
         true_viscosity_value = 0.004  # 0.01
         true_density_value = 0.00106  # 1.0
-        number_of_training_iterations = 200000  # 200000
+        number_of_training_iterations = 100000  # 200000
 
         N_train = 5000
 
-        layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
+        number_of_hidden_layers = 4
+        layers = [3] + [20] * number_of_hidden_layers + [3]
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
         # Load Data
@@ -570,7 +571,7 @@ if __name__ == "__main__":
                 plot_solution(X_star, u_pred, plot_id, plot_title)
                 plot_id += 1
 
-        t_star = t_star * 0 + 3.5
+        t_star = t_star * 0 + 1.0
         u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
         lambda_1_value = model.sess.run(model.lambda_1)
         lambda_2_value = model.sess.run(model.lambda_2)
