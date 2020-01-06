@@ -124,6 +124,22 @@ class MultipleFileReader(object):
         else:
             self.gathered_data = data_for_this_file
 
+    def add_point_for_navier_stokes_loss_only(self, point):
+        if self.gathered_data is None:
+            raise RuntimeError("Please add some data with add_file_name before calling this function.")
+        else:
+            for key in self.gathered_data:
+                if key in MultipleFileReader.key_to_concatenation_axis_map:
+                    if key == 't':
+                        point_for_navier_stokes_loss_only = self.gathered_data[key] * 0 + point
+                        self.gathered_data[key] = np.concatenate((self.gathered_data[key], point_for_navier_stokes_loss_only),
+                                                                 MultipleFileReader.key_to_concatenation_axis_map[key])
+                    else:
+                        dummy_data_to_be_ignored = self.gathered_data[key] * 0 - 1.0  # -1 to indicate  that it's dummy data
+                        self.gathered_data[key] = np.concatenate((self.gathered_data[key], dummy_data_to_be_ignored),
+                                                                 MultipleFileReader.key_to_concatenation_axis_map[key])
+        return self
+
     def get_pinns_format_input_data(self):
         return self.gathered_data
 

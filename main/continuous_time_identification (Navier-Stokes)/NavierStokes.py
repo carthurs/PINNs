@@ -111,13 +111,20 @@ class PhysicsInformedNN:
 
         navier_stokes_loss_scaling = 100
         if self.p_reference_point is not None:
-            self.loss_velocity = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
-                                 tf.reduce_sum(tf.square(self.v_tf - self.v_pred))
+            self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), self.u_tf*0.0, self.u_tf - self.u_pred))) + \
+                                 tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), self.u_tf*0.0, self.v_tf - self.v_pred)))
             self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
                                       tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
             self.loss_pressure_node = tf.square(self.p_at_first_node[0] - self.p_reference_point[3])
 
-            self.loss = self.loss_velocity + self.loss_navier_stokes + self.loss_pressure_node
+            # loss_t_gradient = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*psi_t_pred)) +\
+            #                   tf.reduce_sum(tf.square(navier_stokes_loss_scaling*p_t_pred))
+
+            # if self.u_tf[0] == -1 and self.v_tf[0] == -1:
+            #     # Navier-Stokes loss only here, as the -1s indicate we have no data here
+            #     self.loss = self.loss_navier_stokes + loss_t_gradient
+            # else:
+            self.loss = self.loss_velocity + self.loss_navier_stokes + self.loss_pressure_node  #+ loss_t_gradient
         else:
             self.loss_velocity = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
                                  tf.reduce_sum(tf.square(self.v_tf - self.v_pred))
@@ -240,8 +247,16 @@ class PhysicsInformedNN:
         v = -tf.gradients(psi, x)[0]
 
         unsteady_flow = False
+        # smooth_between_data = True
+
         if unsteady_flow:
             u_t = tf.gradients(u, t)[0]
+        # if smooth_between_data:
+        #     psi_t = tf.gradients(psi, t)[0]
+        #     p_t = tf.gradients(p, t)[0]
+        # else:
+        #     psi_t = None
+        #     p_t = None
         u_x = tf.gradients(u, x)[0]
         u_y = tf.gradients(u, y)[0]
         u_xx = tf.gradients(u_x, x)[0]
@@ -271,7 +286,7 @@ class PhysicsInformedNN:
         psi_and_p_ignore_psi = self.neural_net(tf.constant(self.p_reference_point[0:3], shape=(1, 3)), self.weights, self.biases)
         self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
 
-        return u, v, p, f_u, f_v, psi, self.p_at_first_node, loss_pieces
+        return u, v, p, f_u, f_v, psi, self.p_at_first_node, loss_pieces  #, psi_t, p_t
 
     def callback(self, loss, lambda_1, lambda_2):
         self.iteration_counter += 1
@@ -420,7 +435,10 @@ if __name__ == "__main__":
 
     # Warning: this assumes that the only contents of the logs directory is subdirs with integer names.
     integer_log_subdir_names = [int(filename) for filename in os.listdir(tensorboard_log_directory_base)]
-    next_available_integer_for_subdir_name = max(integer_log_subdir_names) + 1
+    try:
+        next_available_integer_for_subdir_name = max(integer_log_subdir_names) + 1
+    except ValueError:
+        next_available_integer_for_subdir_name = 0
 
     tensorboard_log_directory = '{}\\{}'.format(tensorboard_log_directory_base, next_available_integer_for_subdir_name)
     os.mkdir(tensorboard_log_directory)
@@ -472,6 +490,10 @@ if __name__ == "__main__":
         for fn_and_pv in file_names_and_parameter_values:
             data_reader.add_file_name("{}.vtu".format(fn_and_pv[0]), fn_and_pv[1])
 
+        additional_navier_stokes_only_datapoints = [1.7, 2.3, 2.7, 5.0, 0.0]
+        for additional_ns_only_point in additional_navier_stokes_only_datapoints:
+            data_reader.add_point_for_navier_stokes_loss_only(additional_ns_only_point)
+
         # For now, we recycle the T dimension as the generic parameter dimension for steady flow data. Can
         # adjust this later.
         data = data_reader.get_pinns_format_input_data()
@@ -514,7 +536,7 @@ if __name__ == "__main__":
         v_train = v[idx, :]
 
         # Test Data
-        snap = np.array([int(np.floor(T/2))])
+        snap = np.array([0])  #np.array([int(np.floor(T/2))])
         print("snap", snap)
         x_star = X_star[:, 0:1]
         y_star = X_star[:, 1:2]
@@ -569,6 +591,10 @@ if __name__ == "__main__":
                 u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
                 plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
                 plot_solution(X_star, u_pred, plot_id, plot_title)
+                plot_id += 1
+
+                plot_title = "Predicted Pressure Parameter {} max observed {}".format(t_parameter, np.max(p_pred))
+                plot_solution(X_star, p_pred, plot_id, plot_title)
                 plot_id += 1
 
         t_star = t_star * 0 + 1.0
