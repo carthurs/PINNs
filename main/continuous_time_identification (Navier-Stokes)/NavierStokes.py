@@ -109,10 +109,20 @@ class PhysicsInformedNN:
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node, self.loss_pieces_out =\
                                                                             self.net_NS(self.x_tf, self.y_tf, self.t_tf)
 
+        inflow_condition = lambda y: (y-10.0)*y/25 * self.t_tf
+        zero = self.u_pred * 0.0  # get zeros of the correct shape. I'm sure there's a more sane way of doing this...
+        # lines are:
+        # 1) inflow condition satisfaction on u
+        # 2) lower boundary noslip satisfaction
+        # 3) upper boundary noslip satisfaction
+        self.loss_boundary_conditions = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.x_tf, 0.0), self.u_pred - inflow_condition(self.y_tf), zero))) +\
+                                        tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.y_tf, 0.0), self.u_pred + self.v_pred, zero))) + \
+                                        tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.y_tf, 10.0), self.u_pred + self.v_pred, zero)))
+
         navier_stokes_loss_scaling = 100
         if self.p_reference_point is not None:
-            self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), self.u_tf*0.0, self.u_tf - self.u_pred))) + \
-                                 tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), self.u_tf*0.0, self.v_tf - self.v_pred)))
+            self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zero, self.u_tf - self.u_pred))) + \
+                                 tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zero, self.v_tf - self.v_pred)))
             self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
                                       tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
             self.loss_pressure_node = tf.square(self.p_at_first_node[0] - self.p_reference_point[3])
@@ -381,17 +391,40 @@ class PhysicsInformedNN:
 
     def get_loss(self, x_star, y_star, t_star):
         tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
-        naver_stokes_loss = self.sess.run(self.loss_navier_stokes, tf_dict)
-        return naver_stokes_loss
+        navier_stokes_loss = self.sess.run(self.loss_navier_stokes, tf_dict)
+        boundary_condition_loss = self.sess.run(self.loss_boundary_conditions, tf_dict)
+        return navier_stokes_loss, boundary_condition_loss
 
 
-def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, savefile_nametag=None):
+def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, savefile_nametag=None, second_y_data=None):
     plt.figure(index)
+    if second_y_data is not None:
+        number_of_columns = 3
+    else:
+        number_of_columns = 1
+
+    plt.subplot(1, number_of_columns, 1)
     plt.plot(x_data, y_data)
-    if scatter_x is not None and scatter_y is not None:
-        plt.scatter(scatter_x, scatter_y)
-    plt.title(title)
     plt.yscale('log')
+    if second_y_data is not None:
+        plt.subplot(1, number_of_columns, 2)
+        plt.plot(x_data, second_y_data)
+        plt.yscale('log')
+
+        plt.subplot(1, number_of_columns, 3)
+        plt.plot(x_data, [y1+y2 for (y1,y2) in zip(y_data, second_y_data)])
+        plt.yscale('log')
+
+    if scatter_x is not None and scatter_y is not None:
+        plt.subplot(1, number_of_columns, 1)
+        plt.scatter(scatter_x, scatter_y)
+        if second_y_data is not None:
+            plt.subplot(1, number_of_columns, 2)
+            plt.scatter(scatter_x, [1000.0 for _ in scatter_y])
+            plt.subplot(1, number_of_columns, 3)
+            plt.scatter(scatter_x, [1000.0 for _ in scatter_y])
+
+    plt.title(title)
     if savefile_nametag is not None:
         title += savefile_nametag
     plt.savefig(title.replace(" ", "_") + '.png')

@@ -32,11 +32,14 @@ if __name__ == '__main__':
     # layers = [3] + [20] * number_of_hidden_layers + [3]
 
     with tf.device("/gpu:0"):
-        pickled_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
-        saved_tf_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
+        # pickled_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
+        # saved_tf_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
 
         # pickled_model_filename = 'trained_model_nonoise_200000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_10_layers.pickle'
         # saved_tf_model_filename = 'trained_model_nonoise_200000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_10_layers.tf'
+
+        pickled_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05mesht_gradients_zero_ref_pressure.pickle_10_layers.pickle'
+        saved_tf_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05mesht_gradients_zero_ref_pressure.pickle_10_layers.tf'
 
         tf.reset_default_graph()
         with open(pickled_model_filename, 'rb') as pickled_model_file:
@@ -47,7 +50,8 @@ if __name__ == '__main__':
 
         tf.train.Saver().restore(model.sess, saved_tf_model_filename)
 
-        data_file = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
+        # data_file = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
+        data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
         data_reader = VtkDataReader.VtkDataReader(data_file, 1.0)
         data = data_reader.get_pinns_format_input_data()
         X_star = data['X_star']  # N x 2
@@ -64,13 +68,15 @@ if __name__ == '__main__':
 
         plot_id = 10
         gathered_losses = dict()
+        gathered_boundary_losses = dict()
         for t_parameter in np.linspace(0.0, 6.0, num=61):  #[1, 1.5, 2, 2.5, 3, 4, 3.5, 4.5, 2.2, 1.1, 0.5, -0.5, 5.0, 0.0]:
             t_star = t_star * 0 + t_parameter
             u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
 
-            my_loss = model.get_loss(x_star, y_star, t_star)
+            navier_stokes_loss, boundary_condition_loss = model.get_loss(x_star, y_star, t_star)
 
-            gathered_losses[t_parameter] = my_loss
+            gathered_losses[t_parameter] = navier_stokes_loss
+            gathered_boundary_losses[t_parameter] = boundary_condition_loss
 
             if plot_figures:
                 plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
@@ -98,8 +104,9 @@ if __name__ == '__main__':
 
         x_data = list(gathered_losses.keys())
         y_data = list(gathered_losses.values())
+        second_panel_y_data = list(gathered_boundary_losses.values())
         scatter_x = parameters_with_real_simulation_data
         scatter_y = [gathered_losses[v] for v in scatter_x]
-        additional_fig_filename_tag = "1"
-        NavierStokes.plot_graph(x_data, y_data, plot_id, 'Loss over Parameters', scatter_x, scatter_y, additional_fig_filename_tag)
+        additional_fig_filename_tag = "3"
+        NavierStokes.plot_graph(x_data, y_data, plot_id, 'Loss over Parameters', scatter_x, scatter_y, additional_fig_filename_tag, second_panel_y_data)
         plot_id += 1
