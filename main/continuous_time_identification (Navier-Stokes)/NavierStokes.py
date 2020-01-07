@@ -58,7 +58,8 @@ class PhysicsInformedNN:
                                'lambda_2', 'x_tf', 'y_tf', 't_tf', 'u_tf', 'v_tf', 'u_pred', 'v_pred', 'p_pred',
                                'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node', 'loss_summary', 'psi_pred',
                                'loss_velocity_summary', 'loss_ns_summary', 'loss_navier_stokes', 'loss_velocity',
-                               'loss_pressure_node', 'other_summary_scalars', 'loss_pieces_out']
+                               'loss_pressure_node', 'other_summary_scalars', 'loss_pieces_out',
+                               'loss_boundary_conditions']
 
         for variable_to_remove in variables_to_remove:
             try:
@@ -115,9 +116,9 @@ class PhysicsInformedNN:
         # 1) inflow condition satisfaction on u
         # 2) lower boundary noslip satisfaction
         # 3) upper boundary noslip satisfaction
-        self.loss_boundary_conditions = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.x_tf, 0.0), self.u_pred - inflow_condition(self.y_tf), zero))) +\
-                                        tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.y_tf, 0.0), self.u_pred + self.v_pred, zero))) + \
-                                        tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.y_tf, 10.0), self.u_pred + self.v_pred, zero)))
+        self.loss_boundary_conditions = tf.reduce_sum(tf.square(tf.where(tf.math.less(self.x_tf, 0.0001), self.u_pred - inflow_condition(self.y_tf), zero))) +\
+                                        tf.reduce_sum(tf.square(tf.where(tf.math.less(self.y_tf, 0.0001), self.u_pred + self.v_pred, zero))) + \
+                                        tf.reduce_sum(tf.square(tf.where(tf.math.greater(self.y_tf, 9.9999), self.u_pred + self.v_pred, zero)))
 
         navier_stokes_loss_scaling = 100
         if self.p_reference_point is not None:
@@ -174,12 +175,7 @@ class PhysicsInformedNN:
     def getMaxOptimizerIterations(self):
         return self.max_optimizer_iterations
 
-    # Initialize the class
-    def __init__(self, x, y, t, u, v, layers, p_reference_point, discover_navier_stokes_parameters,
-                 true_viscosity_in, true_density_in):
-        self.p_at_first_node = 0.0
-        self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
-
+    def reset_training_data(self, x, y, t, u, v):
         X = np.concatenate([x, y, t], 1)
 
         self.lb = X.min(0)
@@ -194,14 +190,23 @@ class PhysicsInformedNN:
 
         self.X = X
 
-        self.x = X[:,0:1]
-        self.y = X[:,1:2]
-        self.t = X[:,2:3]
-
-        self.p_reference_point = p_reference_point
+        self.x = X[:, 0:1]
+        self.y = X[:, 1:2]
+        self.t = X[:, 2:3]
 
         self.u = u
         self.v = v
+
+
+    # Initialize the class
+    def __init__(self, x, y, t, u, v, layers, p_reference_point, discover_navier_stokes_parameters,
+                 true_viscosity_in, true_density_in):
+        self.p_at_first_node = 0.0
+        self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
+
+        self.reset_training_data(x, y, t, u, v)
+
+        self.p_reference_point = p_reference_point
 
         self.layers = layers
 
@@ -396,7 +401,8 @@ class PhysicsInformedNN:
         return navier_stokes_loss, boundary_condition_loss
 
 
-def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, savefile_nametag=None, second_y_data=None):
+def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, savefile_nametag=None, second_y_data=None,
+               y_range_1=(None, None), y_range_2=(None, None), y_range_3=(None, None)):
     plt.figure(index)
     if second_y_data is not None:
         number_of_columns = 3
@@ -405,15 +411,22 @@ def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, sav
 
     plt.subplot(1, number_of_columns, 1)
     plt.plot(x_data, y_data)
+    plt.axis([None, None, y_range_1[0], y_range_1[1]])
     plt.yscale('log')
+    plt.title(title)
+
     if second_y_data is not None:
         plt.subplot(1, number_of_columns, 2)
         plt.plot(x_data, second_y_data)
+        plt.axis([None, None, y_range_2[0], y_range_2[1]])
         plt.yscale('log')
+        plt.title('boundary')
 
         plt.subplot(1, number_of_columns, 3)
         plt.plot(x_data, [y1+y2 for (y1,y2) in zip(y_data, second_y_data)])
+        plt.axis([None, None, y_range_3[0], y_range_3[1]])
         plt.yscale('log')
+        plt.title('sum')
 
     if scatter_x is not None and scatter_y is not None:
         plt.subplot(1, number_of_columns, 1)
@@ -424,7 +437,6 @@ def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, sav
             plt.subplot(1, number_of_columns, 3)
             plt.scatter(scatter_x, [1000.0 for _ in scatter_y])
 
-    plt.title(title)
     if savefile_nametag is not None:
         title += savefile_nametag
     plt.savefig(title.replace(" ", "_") + '.png')
@@ -509,6 +521,7 @@ if __name__ == "__main__":
         do_noisy_data_case = False
         plot_lots = True
         load_existing_model = True
+        train_model_further_with_new_data = True
         use_pressure_node_in_training = True
         discover_navier_stokes_parameters = False
         true_viscosity_value = 0.004  # 0.01
@@ -536,7 +549,8 @@ if __name__ == "__main__":
                                            (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_1pt5Inflow\\' + vtu_data_file_name, 1.5),
                                            (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_2pt5Inflow\\' + vtu_data_file_name, 2.5),
                                            (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt0Inflow\\' + vtu_data_file_name, 3.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_4pt0Inflow\\' + vtu_data_file_name, 4.0)]
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_4pt0Inflow\\' + vtu_data_file_name, 4.0),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt5Inflow\\' + vtu_data_file_name, 3.5)]
         for fn_and_pv in file_names_and_parameter_values:
             data_reader.add_file_name("{}.vtu".format(fn_and_pv[0]), fn_and_pv[1])
 
@@ -623,8 +637,10 @@ if __name__ == "__main__":
             tf.train.Saver().restore(model.sess, saved_tf_model_filename)
 
             # model.call_just_LBGDSF_optimizer()
-            # run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
-            #              t_star, pickled_model_filename, saved_tf_model_filename)
+            if train_model_further_with_new_data:
+                model.reset_training_data(x_train, y_train, t_train, u_train, v_train)
+                run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
+                             t_star, 'retrained_' + pickled_model_filename, 'retrained_' + saved_tf_model_filename)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node,

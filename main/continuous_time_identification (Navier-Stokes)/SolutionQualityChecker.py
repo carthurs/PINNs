@@ -32,14 +32,15 @@ if __name__ == '__main__':
     # layers = [3] + [20] * number_of_hidden_layers + [3]
 
     with tf.device("/gpu:0"):
-        # pickled_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
-        # saved_tf_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
+        pickled_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
+        saved_tf_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
 
         # pickled_model_filename = 'trained_model_nonoise_200000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_10_layers.pickle'
         # saved_tf_model_filename = 'trained_model_nonoise_200000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_10_layers.tf'
 
-        pickled_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05mesht_gradients_zero_ref_pressure.pickle_10_layers.pickle'
-        saved_tf_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05mesht_gradients_zero_ref_pressure.pickle_10_layers.tf'
+
+        # pickled_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05mesht_gradients_zero_ref_pressure.pickle_10_layers.pickle'
+        # saved_tf_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05mesht_gradients_zero_ref_pressure.pickle_10_layers.tf'
 
         tf.reset_default_graph()
         with open(pickled_model_filename, 'rb') as pickled_model_file:
@@ -50,8 +51,8 @@ if __name__ == '__main__':
 
         tf.train.Saver().restore(model.sess, saved_tf_model_filename)
 
-        # data_file = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
-        data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
+        data_file = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
+        # data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
         data_reader = VtkDataReader.VtkDataReader(data_file, 1.0)
         data = data_reader.get_pinns_format_input_data()
         X_star = data['X_star']  # N x 2
@@ -87,7 +88,7 @@ if __name__ == '__main__':
                 NavierStokes.plot_solution(X_star, p_pred, plot_id, plot_title)
                 plot_id += 1
 
-        parameters_with_real_simulation_data = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0]
+        parameters_with_real_simulation_data = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
 
         print("Blue indicates that simulation data was used at this point. Yellow indicates interpolation.")
         accuracy_threshold = 0.002
@@ -107,6 +108,8 @@ if __name__ == '__main__':
         second_panel_y_data = list(gathered_boundary_losses.values())
         scatter_x = parameters_with_real_simulation_data
         scatter_y = [gathered_losses[v] for v in scatter_x]
-        additional_fig_filename_tag = "3"
-        NavierStokes.plot_graph(x_data, y_data, plot_id, 'Loss over Parameters', scatter_x, scatter_y, additional_fig_filename_tag, second_panel_y_data)
+        additional_fig_filename_tag = "4"
+        NavierStokes.plot_graph(x_data, y_data, plot_id, 'Loss over Parameters', scatter_x, scatter_y,
+                                additional_fig_filename_tag, second_panel_y_data, y_range_1=(1e-4, 1e2),
+                                y_range_2=(1e0, 1e4), y_range_3=(1e0, 1e4))
         plot_id += 1
