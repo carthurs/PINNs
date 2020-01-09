@@ -1,5 +1,5 @@
 """
-@author: Maziar Raissi
+@author: Maziar Raissi, Chris Arthurs
 """
 import sys
 sys.path.insert(0, '../../Utilities/')
@@ -31,8 +31,8 @@ import sys
 import warnings
 import VtkDataReader
 
-np.random.seed(1234)
-tf.set_random_seed(1234)
+# np.random.seed(1234)
+# tf.set_random_seed(1234)
 
 
 def array_extending_insert(array, index, value):
@@ -110,15 +110,23 @@ class PhysicsInformedNN:
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node, self.loss_pieces_out =\
                                                                             self.net_NS(self.x_tf, self.y_tf, self.t_tf)
 
-        inflow_condition = lambda y: (y-10.0)*y/25 * self.t_tf
+        inflow_condition = lambda y: (10.0-y)*y/25.0 * self.t_tf
         zero = self.u_pred * 0.0  # get zeros of the correct shape. I'm sure there's a more sane way of doing this...
         # lines are:
         # 1) inflow condition satisfaction on u
         # 2) lower boundary noslip satisfaction
         # 3) upper boundary noslip satisfaction
-        self.loss_boundary_conditions = tf.reduce_sum(tf.square(tf.where(tf.math.less(self.x_tf, 0.0001), self.u_pred - inflow_condition(self.y_tf), zero))) +\
-                                        tf.reduce_sum(tf.square(tf.where(tf.math.less(self.y_tf, 0.0001), self.u_pred + self.v_pred, zero))) + \
-                                        tf.reduce_sum(tf.square(tf.where(tf.math.greater(self.y_tf, 9.9999), self.u_pred + self.v_pred, zero)))
+        # self.loss_boundary_conditions = tf.reduce_sum(tf.square(tf.where(tf.math.less(self.x_tf, 0.0001), self.u_pred - inflow_condition(self.y_tf), zero))) +\
+        #                                 tf.reduce_sum(tf.square(tf.where(tf.math.less(self.y_tf, 0.0001), self.u_pred + self.v_pred, zero))) + \
+        #                                 tf.reduce_sum(tf.square(tf.where(tf.math.greater(self.y_tf, 9.999), self.u_pred + self.v_pred, zero)))
+        self.loss_boundary_conditions = tf.reduce_sum(
+            tf.square(tf.where(tf.math.less(self.x_tf, 0.0001), self.u_pred - inflow_condition(self.y_tf), zero))) + \
+                                        tf.reduce_sum(tf.square(
+                                            tf.where(tf.math.less(self.y_tf, 0.0001), self.u_pred + self.v_pred,
+                                                     zero))) + \
+                                        tf.reduce_sum(tf.square(
+                                            tf.where(tf.math.greater(self.y_tf, 9.999), self.u_pred + self.v_pred,
+                                                     zero)))
 
         navier_stokes_loss_scaling = 100
         if self.p_reference_point is not None:
@@ -400,9 +408,13 @@ class PhysicsInformedNN:
         boundary_condition_loss = self.sess.run(self.loss_boundary_conditions, tf_dict)
         return navier_stokes_loss, boundary_condition_loss
 
+    def get_solution(self, x_star, y_star, t_star):
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
+        return self.sess.run(self.u_pred, tf_dict)
+
 
 def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, savefile_nametag=None, second_y_data=None,
-               y_range_1=(None, None), y_range_2=(None, None), y_range_3=(None, None)):
+               y_range_1=(None, None), y_range_2=(None, None), y_range_3=(None, None), relative_folder_path=None):
     plt.figure(index)
     if second_y_data is not None:
         number_of_columns = 3
@@ -423,7 +435,8 @@ def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, sav
         plt.title('boundary')
 
         plt.subplot(1, number_of_columns, 3)
-        plt.plot(x_data, [y1+y2 for (y1,y2) in zip(y_data, second_y_data)])
+        loss_sum = [y1+y2 for (y1,y2) in zip(y_data, second_y_data)]
+        plt.plot(x_data, loss_sum)
         plt.axis([None, None, y_range_3[0], y_range_3[1]])
         plt.yscale('log')
         plt.title('sum')
@@ -433,16 +446,22 @@ def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, sav
         plt.scatter(scatter_x, scatter_y)
         if second_y_data is not None:
             plt.subplot(1, number_of_columns, 2)
-            plt.scatter(scatter_x, [1000.0 for _ in scatter_y])
+            boundary_loss_interpolator = scipy.interpolate.interp1d(x_data, second_y_data)
+            plt.scatter(scatter_x, boundary_loss_interpolator(scatter_x))
             plt.subplot(1, number_of_columns, 3)
-            plt.scatter(scatter_x, [1000.0 for _ in scatter_y])
+            total_loss_interpolator = scipy.interpolate.interp1d(x_data, loss_sum)
+            plt.scatter(scatter_x, total_loss_interpolator(scatter_x))
 
     if savefile_nametag is not None:
         title += savefile_nametag
-    plt.savefig(title.replace(" ", "_") + '.png')
+
+    figure_savefile = title.replace(" ", "_") + '.png'
+    if relative_folder_path is not None:
+        figure_savefile = relative_folder_path + figure_savefile
+    plt.savefig(figure_savefile)
 
 
-def plot_solution(X_star, u_star, index, title, colour_range=(None, None)):
+def plot_solution(X_star, u_star, index, title, colour_range=(None, None), relative_folder_path=None):
     lb = X_star.min(0)
     ub = X_star.max(0)
     nn = 200
@@ -456,7 +475,10 @@ def plot_solution(X_star, u_star, index, title, colour_range=(None, None)):
     plt.pcolor(X, Y, U_star, cmap='jet', vmin=colour_range[0], vmax=colour_range[1])
     plt.colorbar()
     plt.title(title)
-    plt.savefig(title.replace(" ", "_") + '.png')
+    figure_savefile = title.replace(" ", "_") + '.png'
+    if relative_folder_path is not None:
+        figure_savefile = relative_folder_path + figure_savefile
+    plt.savefig(figure_savefile)
 
 
 def axisEqual3D(ax):
@@ -491,9 +513,8 @@ def run_training(tensorboard_log_directory_in, model_in, number_of_training_iter
         print("Error pickling model: model not saved!", e)
 
 
-if __name__ == "__main__":
-
-    tensorboard_log_directory_base = r'.\logs'
+def run(additional_simulation_data=None):
+    tensorboard_log_directory_base = r'./logs'
 
     # Warning: this assumes that the only contents of the logs directory is subdirs with integer names.
     integer_log_subdir_names = [int(filename) for filename in os.listdir(tensorboard_log_directory_base)]
@@ -502,7 +523,7 @@ if __name__ == "__main__":
     except ValueError:
         next_available_integer_for_subdir_name = 0
 
-    tensorboard_log_directory = '{}\\{}'.format(tensorboard_log_directory_base, next_available_integer_for_subdir_name)
+    tensorboard_log_directory = '{}/{}'.format(tensorboard_log_directory_base, next_available_integer_for_subdir_name)
     os.mkdir(tensorboard_log_directory)
 
     # Remove any files from the current directory, which contain "tempstate" - these can break future simulations if
@@ -537,20 +558,21 @@ if __name__ == "__main__":
         # Load Data
         # data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
 
-        data_directory = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\\'
+        data_directory = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/'
         vtu_data_file_name = 'tube10mm_diameter_pt05mesh'
         # data = VtkDataReader.VtkDataReader.from_single_data_file(data_directory + vtu_data_file_name + '.vtu'
         #                                            ).get_pinns_format_input_data()
 
         data_reader = VtkDataReader.MultipleFileReader()
-        base_base_data_directory = r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\\'
+        base_base_data_directory = r'/home/chris/WorkData/nektar++/actual/'
         file_names_and_parameter_values = [(data_directory + vtu_data_file_name, 1.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_doubleInflow\\' + vtu_data_file_name, 2.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_1pt5Inflow\\' + vtu_data_file_name, 1.5),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_2pt5Inflow\\' + vtu_data_file_name, 2.5),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt0Inflow\\' + vtu_data_file_name, 3.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_4pt0Inflow\\' + vtu_data_file_name, 4.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt5Inflow\\' + vtu_data_file_name, 3.5)]
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_doubleInflow/' + vtu_data_file_name, 2.0),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_1pt5Inflow/' + vtu_data_file_name, 1.5),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_2pt5Inflow/' + vtu_data_file_name, 2.5),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt0Inflow/' + vtu_data_file_name, 3.0),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_4pt0Inflow/' + vtu_data_file_name, 4.0),
+                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt5Inflow/' + vtu_data_file_name, 3.5)] + \
+                                            additional_simulation_data
         for fn_and_pv in file_names_and_parameter_values:
             data_reader.add_file_name("{}.vtu".format(fn_and_pv[0]), fn_and_pv[1])
 
@@ -623,8 +645,8 @@ if __name__ == "__main__":
 
         file_name_tag = '{}_{}_layers'.format(file_name_tag, len(layers))
 
-        pickled_model_filename = 'trained_model_nonoise_{}{}.pickle'.format(number_of_training_iterations, file_name_tag)
-        saved_tf_model_filename = 'trained_model_nonoise_{}{}.tf'.format(number_of_training_iterations, file_name_tag)
+        pickled_model_filename = 'retrained3_retrained2_retrained_trained_model_nonoise_{}{}.pickle'.format(number_of_training_iterations, file_name_tag)
+        saved_tf_model_filename = 'retrained3_retrained2_retrained_trained_model_nonoise_{}{}.tf'.format(number_of_training_iterations, file_name_tag)
 
         if load_existing_model:
             tf.reset_default_graph()
@@ -640,7 +662,7 @@ if __name__ == "__main__":
             if train_model_further_with_new_data:
                 model.reset_training_data(x_train, y_train, t_train, u_train, v_train)
                 run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
-                             t_star, 'retrained_' + pickled_model_filename, 'retrained_' + saved_tf_model_filename)
+                             t_star, 'retrained4_' + pickled_model_filename, 'retrained4_' + saved_tf_model_filename)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node,
@@ -903,3 +925,9 @@ if __name__ == "__main__":
         print("Time taken to run: {}".format(timer.elapsed))
 
         # savefig('./figures/NavierStokes_prediction')
+
+
+if __name__ == "__main__":
+    # run()
+    sim_dir_and_parameter_tuple = (r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity_t6.0/tube10mm_diameter_pt05mesh', 6.0)
+    run(additional_simulation_data=[sim_dir_and_parameter_tuple])
