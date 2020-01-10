@@ -23,13 +23,16 @@ class NektarDriver(object):
         self._set_simulation_inflow_parameter()
 
         # Run the simulation
-        subprocess.run(['mpirun', '-np', '6', '/home/chris/workspace/nektapp/nektar++/build/dist/bin/IncNavierStokesSolver', 'tube10mm_diameter_pt05mesh.xml', 'conditions.xml'])
+        subprocess.run(['mpirun', '-np', '6', '/home/chris/workspace/nektapp/nektar++/build/dist/bin/IncNavierStokesSolver', 'tube10mm_diameter_1pt0mesh.xml', 'conditions.xml'])
 
         # Reduce the results into the vtu for paraview etc.
-        os.remove(self.vtu_file_name)
+        try:
+            os.remove(self.vtu_file_name)
+        except FileNotFoundError:
+            pass
         subprocess.run(['mpirun', '-np', '1',
-                        '/home/chris/workspace/nektapp/nektar++/build/dist/bin/FieldConvert', 'tube10mm_diameter_pt05mesh.fld',
-                        'tube10mm_diameter_pt05mesh.xml', self.vtu_file_name])
+                        '/home/chris/workspace/nektapp/nektar++/build/dist/bin/FieldConvert', 'tube10mm_diameter_1pt0mesh.fld',
+                        'tube10mm_diameter_1pt0mesh.xml', self.vtu_file_name])
 
         os.chdir(self.initial_working_path)
 

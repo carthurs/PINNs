@@ -165,7 +165,6 @@ class PhysicsInformedNN:
         self.other_summary_scalars.append(tf.summary.scalar("v_yy", tf.reduce_mean(self.loss_pieces_out[4])))
 
 
-        self.max_optimizer_iterations = 50000  # 50000
         self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,
                                                                 method='L-BFGS-B',
                                                                 options={'maxiter': self.max_optimizer_iterations,
@@ -208,7 +207,7 @@ class PhysicsInformedNN:
 
     # Initialize the class
     def __init__(self, x, y, t, u, v, layers, p_reference_point, discover_navier_stokes_parameters,
-                 true_viscosity_in, true_density_in):
+                 true_viscosity_in, true_density_in, max_optimizer_iterations_in):
         self.p_at_first_node = 0.0
         self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
 
@@ -223,6 +222,7 @@ class PhysicsInformedNN:
         self.true_viscosity = true_viscosity_in
         self.true_density = true_density_in
 
+        self.max_optimizer_iterations = max_optimizer_iterations_in
         self.finalise_state_setup()
 
     def initialize_NN(self, layers):
@@ -459,6 +459,7 @@ def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, sav
     if relative_folder_path is not None:
         figure_savefile = relative_folder_path + figure_savefile
     plt.savefig(figure_savefile)
+    plt.close()
 
 
 def plot_solution(X_star, u_star, index, title, colour_range=(None, None), relative_folder_path=None):
@@ -479,6 +480,7 @@ def plot_solution(X_star, u_star, index, title, colour_range=(None, None), relat
     if relative_folder_path is not None:
         figure_savefile = relative_folder_path + figure_savefile
     plt.savefig(figure_savefile)
+    plt.close()
 
 
 def axisEqual3D(ax):
@@ -513,7 +515,9 @@ def run_training(tensorboard_log_directory_in, model_in, number_of_training_iter
         print("Error pickling model: model not saved!", e)
 
 
-def run(additional_simulation_data=None):
+def run(input_pickle_file_template, input_saved_model_template, savefile_tag, number_of_training_iterations,
+        use_pressure_node_in_training, vtu_data_file_name, number_of_hidden_layers, max_optimizer_iterations_in,
+        load_existing_model=False, additional_simulation_data=None, parent_logger=None):
     tensorboard_log_directory_base = r'./logs'
 
     # Warning: this assumes that the only contents of the logs directory is subdirs with integer names.
@@ -541,17 +545,15 @@ def run(additional_simulation_data=None):
 
         do_noisy_data_case = False
         plot_lots = True
-        load_existing_model = True
         train_model_further_with_new_data = True
-        use_pressure_node_in_training = True
+        # use_pressure_node_in_training = True
         discover_navier_stokes_parameters = False
         true_viscosity_value = 0.004  # 0.01
         true_density_value = 0.00106  # 1.0
-        number_of_training_iterations = 100000  # 200000
+        # number_of_training_iterations = 100000  # 200000
 
         N_train = 5000
 
-        number_of_hidden_layers = 4
         layers = [3] + [20] * number_of_hidden_layers + [3]
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
@@ -559,22 +561,24 @@ def run(additional_simulation_data=None):
         # data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
 
         data_directory = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/'
-        vtu_data_file_name = 'tube10mm_diameter_pt05mesh'
         # data = VtkDataReader.VtkDataReader.from_single_data_file(data_directory + vtu_data_file_name + '.vtu'
         #                                            ).get_pinns_format_input_data()
 
         data_reader = VtkDataReader.MultipleFileReader()
         base_base_data_directory = r'/home/chris/WorkData/nektar++/actual/'
-        file_names_and_parameter_values = [(data_directory + vtu_data_file_name, 1.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_doubleInflow/' + vtu_data_file_name, 2.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_1pt5Inflow/' + vtu_data_file_name, 1.5),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_2pt5Inflow/' + vtu_data_file_name, 2.5),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt0Inflow/' + vtu_data_file_name, 3.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_4pt0Inflow/' + vtu_data_file_name, 4.0),
-                                           (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt5Inflow/' + vtu_data_file_name, 3.5)] + \
-                                            additional_simulation_data
+        # file_names_and_parameter_values = [(data_directory + vtu_data_file_name, 1.0),
+        #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_doubleInflow/' + vtu_data_file_name, 2.0),
+        #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_1pt5Inflow/' + vtu_data_file_name, 1.5),
+        #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_2pt5Inflow/' + vtu_data_file_name, 2.5),
+        #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt0Inflow/' + vtu_data_file_name, 3.0),
+        #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_4pt0Inflow/' + vtu_data_file_name, 4.0),
+        #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_3pt5Inflow/' + vtu_data_file_name, 3.5)] + \
+        #                                     additional_simulation_data
+        file_names_and_parameter_values = additional_simulation_data
         for fn_and_pv in file_names_and_parameter_values:
             data_reader.add_file_name("{}.vtu".format(fn_and_pv[0]), fn_and_pv[1])
+        if parent_logger is not None:
+            parent_logger.info("NavierStokes.py is loading the following datafiles: {}".format(file_names_and_parameter_values))
 
         additional_navier_stokes_only_datapoints = [1.7, 2.3, 2.7, 5.0, 0.0]
         for additional_ns_only_point in additional_navier_stokes_only_datapoints:
@@ -632,21 +636,16 @@ def run(additional_simulation_data=None):
         v_star = U_star[:,1,snap]
         p_star = P_star[:,snap]
 
-        additional_nametag = 'working_500TrainingDatapoints'  #'_30-70x2-8_'
         if use_pressure_node_in_training:
-            file_name_tag = vtu_data_file_name + additional_nametag + "_zero_ref_pressure.pickle"
             # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
             p_single_reference_node = list(map(lambda x: x.item(), [x_star[0], y_star[0], t_star[0], p_star[0]]))
-            loss_history_file_nametag = vtu_data_file_name + additional_nametag + "_single_reference_pressure"
         else:
-            file_name_tag = vtu_data_file_name + additional_nametag + ""
             p_single_reference_node = None
-            loss_history_file_nametag = vtu_data_file_name + additional_nametag + "_no_reference_pressure"
 
-        file_name_tag = '{}_{}_layers'.format(file_name_tag, len(layers))
-
-        pickled_model_filename = 'retrained3_retrained2_retrained_trained_model_nonoise_{}{}.pickle'.format(number_of_training_iterations, file_name_tag)
-        saved_tf_model_filename = 'retrained3_retrained2_retrained_trained_model_nonoise_{}{}.tf'.format(number_of_training_iterations, file_name_tag)
+        pickled_model_filename = input_pickle_file_template.format(savefile_tag)
+        saved_tf_model_filename = input_saved_model_template.format(savefile_tag)
+        pickled_model_filename_out = input_pickle_file_template.format(savefile_tag + 1)
+        saved_tf_model_filename_out = input_saved_model_template.format(savefile_tag + 1)
 
         if load_existing_model:
             tf.reset_default_graph()
@@ -661,15 +660,17 @@ def run(additional_simulation_data=None):
             # model.call_just_LBGDSF_optimizer()
             if train_model_further_with_new_data:
                 model.reset_training_data(x_train, y_train, t_train, u_train, v_train)
+
                 run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
-                             t_star, 'retrained4_' + pickled_model_filename, 'retrained4_' + saved_tf_model_filename)
+                             t_star, pickled_model_filename_out, saved_tf_model_filename_out)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node,
-                                      discover_navier_stokes_parameters, true_viscosity_value, true_density_value)
+                                      discover_navier_stokes_parameters, true_viscosity_value, true_density_value,
+                                      max_optimizer_iterations_in)
 
             run_training(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
-                 t_star, pickled_model_filename, saved_tf_model_filename)
+                 t_star, pickled_model_filename_out, saved_tf_model_filename_out)
 
         # Prediction
         if plot_lots:
@@ -714,8 +715,7 @@ def run(additional_simulation_data=None):
         plot_solution(X_star, p_star[:, 0] - p_pred, 5, "Pressure Error")
         plot_solution(X_star, psi_pred, 6, "Psi")
 
-        np.savetxt('loss_history_{}_{}_{}.dat'.format(number_of_training_iterations, model.getMaxOptimizerIterations(),
-                                                      loss_history_file_nametag), model.getLossHistory())
+        np.savetxt('loss_history_{}_{}.dat'.format(number_of_training_iterations, model.getMaxOptimizerIterations()), model.getLossHistory())
 
         np.savetxt("p_pred_saved.dat", p_pred)
         np.savetxt("X_star_saved.dat", X_star)
@@ -758,168 +758,168 @@ def run(additional_simulation_data=None):
 
 
 
-        ######################################################################
-        ############################# Plotting ###############################
-        ######################################################################
-         # Load Data
-        data_vort = scipy.io.loadmat('../Data/cylinder_nektar_t0_vorticity.mat')
-
-        x_vort = data_vort['x']
-        y_vort = data_vort['y']
-        w_vort = data_vort['w']
-        modes = data_vort['modes'].item()
-        nel = data_vort['nel'].item()
-
-        xx_vort = np.reshape(x_vort, (modes+1,modes+1,nel), order = 'F')
-        yy_vort = np.reshape(y_vort, (modes+1,modes+1,nel), order = 'F')
-        ww_vort = np.reshape(w_vort, (modes+1,modes+1,nel), order = 'F')
-
-        box_lb = np.array([1.0, -2.0])
-        box_ub = np.array([8.0, 2.0])
-
-        fig, ax = newfig(1.0, 1.2)
-        ax.axis('off')
-
-        ####### Row 0: Vorticity ##################
-        gs0 = gridspec.GridSpec(1, 2)
-        gs0.update(top=1-0.06, bottom=1-2/4 + 0.12, left=0.0, right=1.0, wspace=0)
-        ax = plt.subplot(gs0[:, :])
-
-        for i in range(0, nel):
-            h = ax.pcolormesh(xx_vort[:,:,i], yy_vort[:,:,i], ww_vort[:,:,i], cmap='seismic',shading='gouraud',  vmin=-3, vmax=3)
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        fig.colorbar(h, cax=cax)
-
-        ax.plot([box_lb[0],box_lb[0]],[box_lb[1],box_ub[1]],'k',linewidth = 1)
-        ax.plot([box_ub[0],box_ub[0]],[box_lb[1],box_ub[1]],'k',linewidth = 1)
-        ax.plot([box_lb[0],box_ub[0]],[box_lb[1],box_lb[1]],'k',linewidth = 1)
-        ax.plot([box_lb[0],box_ub[0]],[box_ub[1],box_ub[1]],'k',linewidth = 1)
-
-        ax.set_aspect('equal', 'box')
-        ax.set_xlabel('$x$')
-        ax.set_ylabel('$y$')
-        ax.set_title('Vorticity', fontsize = 10)
-
-
-        ####### Row 1: Training data ##################
-        ########      u(t,x,y)     ###################
-        gs1 = gridspec.GridSpec(1, 2)
-        gs1.update(top=1-2/4, bottom=0.0, left=0.01, right=0.99, wspace=0)
-        ax = plt.subplot(gs1[:, 0],  projection='3d')
-        ax.axis('off')
-
-        r1 = [x_star.min(), x_star.max()]
-        r2 = [data['t'].min(), data['t'].max()]
-        r3 = [y_star.min(), y_star.max()]
-
-        for s, e in combinations(np.array(list(product(r1,r2,r3))), 2):
-            if np.sum(np.abs(s-e)) == r1[1]-r1[0] or np.sum(np.abs(s-e)) == r2[1]-r2[0] or np.sum(np.abs(s-e)) == r3[1]-r3[0]:
-                ax.plot3D(*zip(s,e), color="k", linewidth = 0.5)
-
-        ax.scatter(x_train, t_train, y_train, s = 0.1)
-        ax.contourf(X,UU_star,Y, zdir = 'y', offset = t_star.mean(), cmap='rainbow', alpha = 0.8)
-
-        ax.text(x_star.mean(), data['t'].min() - 1, y_star.min() - 1, '$x$')
-        ax.text(x_star.max()+1, data['t'].mean(), y_star.min() - 1, '$t$')
-        ax.text(x_star.min()-1, data['t'].min() - 0.5, y_star.mean(), '$y$')
-        ax.text(x_star.min()-3, data['t'].mean(), y_star.max() + 1, '$u(t,x,y)$')
-        ax.set_xlim3d(r1)
-        ax.set_ylim3d(r2)
-        ax.set_zlim3d(r3)
-        axisEqual3D(ax)
-
-        ########      v(t,x,y)     ###################
-        ax = plt.subplot(gs1[:, 1],  projection='3d')
-        ax.axis('off')
-
-        r1 = [x_star.min(), x_star.max()]
-        r2 = [data['t'].min(), data['t'].max()]
-        r3 = [y_star.min(), y_star.max()]
-
-        for s, e in combinations(np.array(list(product(r1,r2,r3))), 2):
-            if np.sum(np.abs(s-e)) == r1[1]-r1[0] or np.sum(np.abs(s-e)) == r2[1]-r2[0] or np.sum(np.abs(s-e)) == r3[1]-r3[0]:
-                ax.plot3D(*zip(s,e), color="k", linewidth = 0.5)
-
-        ax.scatter(x_train, t_train, y_train, s = 0.1)
-        ax.contourf(X,VV_star,Y, zdir = 'y', offset = t_star.mean(), cmap='rainbow', alpha = 0.8)
-
-        ax.text(x_star.mean(), data['t'].min() - 1, y_star.min() - 1, '$x$')
-        ax.text(x_star.max()+1, data['t'].mean(), y_star.min() - 1, '$t$')
-        ax.text(x_star.min()-1, data['t'].min() - 0.5, y_star.mean(), '$y$')
-        ax.text(x_star.min()-3, data['t'].mean(), y_star.max() + 1, '$v(t,x,y)$')
-        ax.set_xlim3d(r1)
-        ax.set_ylim3d(r2)
-        ax.set_zlim3d(r3)
-        axisEqual3D(ax)
-
-        # savefig('./figures/NavierStokes_data')
-
-
-        fig, ax = newfig(1.015, 0.8)
-        ax.axis('off')
-
-        ######## Row 2: Pressure #######################
-        ########      Predicted p(t,x,y)     ###########
-        gs2 = gridspec.GridSpec(1, 2)
-        gs2.update(top=1, bottom=1-1/2, left=0.1, right=0.9, wspace=0.5)
-        ax = plt.subplot(gs2[:, 0])
-        h = ax.imshow(PP_star, interpolation='nearest', cmap='rainbow',
-                      extent=[x_star.min(), x_star.max(), y_star.min(), y_star.max()],
-                      origin='lower', aspect='auto')
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-
-        fig.colorbar(h, cax=cax)
-        ax.set_xlabel('$x$')
-        ax.set_ylabel('$y$')
-        ax.set_aspect('equal', 'box')
-        ax.set_title('Predicted pressure', fontsize = 10)
-
-        ########     Exact p(t,x,y)     ###########
-        ax = plt.subplot(gs2[:, 1])
-        h = ax.imshow(P_exact, interpolation='nearest', cmap='rainbow',
-                      extent=[x_star.min(), x_star.max(), y_star.min(), y_star.max()],
-                      origin='lower', aspect='auto')
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-
-        fig.colorbar(h, cax=cax)
-        ax.set_xlabel('$x$')
-        ax.set_ylabel('$y$')
-        ax.set_aspect('equal', 'box')
-        ax.set_title('Exact pressure', fontsize = 10)
-
-
-        ######## Row 3: Table #######################
-        gs3 = gridspec.GridSpec(1, 2)
-        gs3.update(top=1-1/2, bottom=0.0, left=0.0, right=1.0, wspace=0)
-        ax = plt.subplot(gs3[:, :])
-        ax.axis('off')
-
-        s = r'$\begin{tabular}{|c|c|}';
-        s = s + r' \hline'
-        s = s + r' Correct PDE & $\begin{array}{c}'
-        s = s + r' u_t + (u u_x + v u_y) = -p_x + 0.01 (u_{xx} + u_{yy})\\'
-        s = s + r' v_t + (u v_x + v v_y) = -p_y + 0.01 (v_{xx} + v_{yy})'
-        s = s + r' \end{array}$ \\ '
-        s = s + r' \hline'
-        s = s + r' Identified PDE (clean data) & $\begin{array}{c}'
-        s = s + r' u_t + %.3f (u u_x + v u_y) = -p_x + %.5f (u_{xx} + u_{yy})' % (lambda_1_value, lambda_2_value)
-        s = s + r' \\'
-        s = s + r' v_t + %.3f (u v_x + v v_y) = -p_y + %.5f (v_{xx} + v_{yy})' % (lambda_1_value, lambda_2_value)
-        s = s + r' \end{array}$ \\ '
-        s = s + r' \hline'
-        s = s + r' Identified PDE (1\% noise) & $\begin{array}{c}'
-        if do_noisy_data_case:
-            s = s + r' u_t + %.3f (u u_x + v u_y) = -p_x + %.5f (u_{xx} + u_{yy})' % (lambda_1_value_noisy, lambda_2_value_noisy)
-            s = s + r' \\'
-            s = s + r' v_t + %.3f (u v_x + v v_y) = -p_y + %.5f (v_{xx} + v_{yy})' % (lambda_1_value_noisy, lambda_2_value_noisy)
-        s = s + r' \end{array}$ \\ '
-        s = s + r' \hline'
-        s = s + r' \end{tabular}$'
-
-        ax.text(0.015,0.0,s)
+        # ######################################################################
+        # ############################# Plotting ###############################
+        # ######################################################################
+        #  # Load Data
+        # data_vort = scipy.io.loadmat('../Data/cylinder_nektar_t0_vorticity.mat')
+        #
+        # x_vort = data_vort['x']
+        # y_vort = data_vort['y']
+        # w_vort = data_vort['w']
+        # modes = data_vort['modes'].item()
+        # nel = data_vort['nel'].item()
+        #
+        # xx_vort = np.reshape(x_vort, (modes+1,modes+1,nel), order = 'F')
+        # yy_vort = np.reshape(y_vort, (modes+1,modes+1,nel), order = 'F')
+        # ww_vort = np.reshape(w_vort, (modes+1,modes+1,nel), order = 'F')
+        #
+        # box_lb = np.array([1.0, -2.0])
+        # box_ub = np.array([8.0, 2.0])
+        #
+        # fig, ax = newfig(1.0, 1.2)
+        # ax.axis('off')
+        #
+        # ####### Row 0: Vorticity ##################
+        # gs0 = gridspec.GridSpec(1, 2)
+        # gs0.update(top=1-0.06, bottom=1-2/4 + 0.12, left=0.0, right=1.0, wspace=0)
+        # ax = plt.subplot(gs0[:, :])
+        #
+        # for i in range(0, nel):
+        #     h = ax.pcolormesh(xx_vort[:,:,i], yy_vort[:,:,i], ww_vort[:,:,i], cmap='seismic',shading='gouraud',  vmin=-3, vmax=3)
+        # divider = make_axes_locatable(ax)
+        # cax = divider.append_axes("right", size="5%", pad=0.05)
+        # fig.colorbar(h, cax=cax)
+        #
+        # ax.plot([box_lb[0],box_lb[0]],[box_lb[1],box_ub[1]],'k',linewidth = 1)
+        # ax.plot([box_ub[0],box_ub[0]],[box_lb[1],box_ub[1]],'k',linewidth = 1)
+        # ax.plot([box_lb[0],box_ub[0]],[box_lb[1],box_lb[1]],'k',linewidth = 1)
+        # ax.plot([box_lb[0],box_ub[0]],[box_ub[1],box_ub[1]],'k',linewidth = 1)
+        #
+        # ax.set_aspect('equal', 'box')
+        # ax.set_xlabel('$x$')
+        # ax.set_ylabel('$y$')
+        # ax.set_title('Vorticity', fontsize = 10)
+        #
+        #
+        # ####### Row 1: Training data ##################
+        # ########      u(t,x,y)     ###################
+        # gs1 = gridspec.GridSpec(1, 2)
+        # gs1.update(top=1-2/4, bottom=0.0, left=0.01, right=0.99, wspace=0)
+        # ax = plt.subplot(gs1[:, 0],  projection='3d')
+        # ax.axis('off')
+        #
+        # r1 = [x_star.min(), x_star.max()]
+        # r2 = [data['t'].min(), data['t'].max()]
+        # r3 = [y_star.min(), y_star.max()]
+        #
+        # for s, e in combinations(np.array(list(product(r1,r2,r3))), 2):
+        #     if np.sum(np.abs(s-e)) == r1[1]-r1[0] or np.sum(np.abs(s-e)) == r2[1]-r2[0] or np.sum(np.abs(s-e)) == r3[1]-r3[0]:
+        #         ax.plot3D(*zip(s,e), color="k", linewidth = 0.5)
+        #
+        # ax.scatter(x_train, t_train, y_train, s = 0.1)
+        # ax.contourf(X,UU_star,Y, zdir = 'y', offset = t_star.mean(), cmap='rainbow', alpha = 0.8)
+        #
+        # ax.text(x_star.mean(), data['t'].min() - 1, y_star.min() - 1, '$x$')
+        # ax.text(x_star.max()+1, data['t'].mean(), y_star.min() - 1, '$t$')
+        # ax.text(x_star.min()-1, data['t'].min() - 0.5, y_star.mean(), '$y$')
+        # ax.text(x_star.min()-3, data['t'].mean(), y_star.max() + 1, '$u(t,x,y)$')
+        # ax.set_xlim3d(r1)
+        # ax.set_ylim3d(r2)
+        # ax.set_zlim3d(r3)
+        # axisEqual3D(ax)
+        #
+        # ########      v(t,x,y)     ###################
+        # ax = plt.subplot(gs1[:, 1],  projection='3d')
+        # ax.axis('off')
+        #
+        # r1 = [x_star.min(), x_star.max()]
+        # r2 = [data['t'].min(), data['t'].max()]
+        # r3 = [y_star.min(), y_star.max()]
+        #
+        # for s, e in combinations(np.array(list(product(r1,r2,r3))), 2):
+        #     if np.sum(np.abs(s-e)) == r1[1]-r1[0] or np.sum(np.abs(s-e)) == r2[1]-r2[0] or np.sum(np.abs(s-e)) == r3[1]-r3[0]:
+        #         ax.plot3D(*zip(s,e), color="k", linewidth = 0.5)
+        #
+        # ax.scatter(x_train, t_train, y_train, s = 0.1)
+        # ax.contourf(X,VV_star,Y, zdir = 'y', offset = t_star.mean(), cmap='rainbow', alpha = 0.8)
+        #
+        # ax.text(x_star.mean(), data['t'].min() - 1, y_star.min() - 1, '$x$')
+        # ax.text(x_star.max()+1, data['t'].mean(), y_star.min() - 1, '$t$')
+        # ax.text(x_star.min()-1, data['t'].min() - 0.5, y_star.mean(), '$y$')
+        # ax.text(x_star.min()-3, data['t'].mean(), y_star.max() + 1, '$v(t,x,y)$')
+        # ax.set_xlim3d(r1)
+        # ax.set_ylim3d(r2)
+        # ax.set_zlim3d(r3)
+        # axisEqual3D(ax)
+        #
+        # # savefig('./figures/NavierStokes_data')
+        #
+        #
+        # fig, ax = newfig(1.015, 0.8)
+        # ax.axis('off')
+        #
+        # ######## Row 2: Pressure #######################
+        # ########      Predicted p(t,x,y)     ###########
+        # gs2 = gridspec.GridSpec(1, 2)
+        # gs2.update(top=1, bottom=1-1/2, left=0.1, right=0.9, wspace=0.5)
+        # ax = plt.subplot(gs2[:, 0])
+        # h = ax.imshow(PP_star, interpolation='nearest', cmap='rainbow',
+        #               extent=[x_star.min(), x_star.max(), y_star.min(), y_star.max()],
+        #               origin='lower', aspect='auto')
+        # divider = make_axes_locatable(ax)
+        # cax = divider.append_axes("right", size="5%", pad=0.05)
+        #
+        # fig.colorbar(h, cax=cax)
+        # ax.set_xlabel('$x$')
+        # ax.set_ylabel('$y$')
+        # ax.set_aspect('equal', 'box')
+        # ax.set_title('Predicted pressure', fontsize = 10)
+        #
+        # ########     Exact p(t,x,y)     ###########
+        # ax = plt.subplot(gs2[:, 1])
+        # h = ax.imshow(P_exact, interpolation='nearest', cmap='rainbow',
+        #               extent=[x_star.min(), x_star.max(), y_star.min(), y_star.max()],
+        #               origin='lower', aspect='auto')
+        # divider = make_axes_locatable(ax)
+        # cax = divider.append_axes("right", size="5%", pad=0.05)
+        #
+        # fig.colorbar(h, cax=cax)
+        # ax.set_xlabel('$x$')
+        # ax.set_ylabel('$y$')
+        # ax.set_aspect('equal', 'box')
+        # ax.set_title('Exact pressure', fontsize = 10)
+        #
+        #
+        # ######## Row 3: Table #######################
+        # gs3 = gridspec.GridSpec(1, 2)
+        # gs3.update(top=1-1/2, bottom=0.0, left=0.0, right=1.0, wspace=0)
+        # ax = plt.subplot(gs3[:, :])
+        # ax.axis('off')
+        #
+        # s = r'$\begin{tabular}{|c|c|}';
+        # s = s + r' \hline'
+        # s = s + r' Correct PDE & $\begin{array}{c}'
+        # s = s + r' u_t + (u u_x + v u_y) = -p_x + 0.01 (u_{xx} + u_{yy})\\'
+        # s = s + r' v_t + (u v_x + v v_y) = -p_y + 0.01 (v_{xx} + v_{yy})'
+        # s = s + r' \end{array}$ \\ '
+        # s = s + r' \hline'
+        # s = s + r' Identified PDE (clean data) & $\begin{array}{c}'
+        # s = s + r' u_t + %.3f (u u_x + v u_y) = -p_x + %.5f (u_{xx} + u_{yy})' % (lambda_1_value, lambda_2_value)
+        # s = s + r' \\'
+        # s = s + r' v_t + %.3f (u v_x + v v_y) = -p_y + %.5f (v_{xx} + v_{yy})' % (lambda_1_value, lambda_2_value)
+        # s = s + r' \end{array}$ \\ '
+        # s = s + r' \hline'
+        # s = s + r' Identified PDE (1\% noise) & $\begin{array}{c}'
+        # if do_noisy_data_case:
+        #     s = s + r' u_t + %.3f (u u_x + v u_y) = -p_x + %.5f (u_{xx} + u_{yy})' % (lambda_1_value_noisy, lambda_2_value_noisy)
+        #     s = s + r' \\'
+        #     s = s + r' v_t + %.3f (u v_x + v v_y) = -p_y + %.5f (v_{xx} + v_{yy})' % (lambda_1_value_noisy, lambda_2_value_noisy)
+        # s = s + r' \end{array}$ \\ '
+        # s = s + r' \hline'
+        # s = s + r' \end{tabular}$'
+        #
+        # ax.text(0.015,0.0,s)
 
         timer.toc()
         print("Time taken to run: {}".format(timer.elapsed))
@@ -928,6 +928,27 @@ def run(additional_simulation_data=None):
 
 
 if __name__ == "__main__":
-    # run()
     sim_dir_and_parameter_tuple = (r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity_t6.0/tube10mm_diameter_pt05mesh', 6.0)
-    run(additional_simulation_data=[sim_dir_and_parameter_tuple])
+    additional_nametag = 'working_500TrainingDatapoints'
+    num_training_iterations = 100000
+    max_optimizer_iterations = 50000  # 50000
+    use_pressure_node_in_training = True
+    vtu_data_file_name = 'tube10mm_diameter_pt05mesh'
+    savefile_tag = 4
+    number_of_hidden_layers = 4
+
+    if use_pressure_node_in_training:
+        file_name_tag = vtu_data_file_name + additional_nametag + "_zero_ref_pressure.pickle"
+    else:
+        file_name_tag = vtu_data_file_name + additional_nametag + ""
+
+    file_name_tag = '{}_{}_layers'.format(file_name_tag, number_of_hidden_layers+2)
+
+    input_pickle_file_template = 'retrained{{}}_retrained3_retrained2_retrained_trained_model_nonoise_{}{}.pickle'.format(
+        num_training_iterations, file_name_tag)
+    input_saved_model_template = 'retrained{{}}_retrained3_retrained2_retrained_trained_model_nonoise_{}{}.tf'.format(
+        num_training_iterations, file_name_tag)
+
+    run(input_pickle_file_template, input_saved_model_template, savefile_tag, num_training_iterations,
+        use_pressure_node_in_training, vtu_data_file_name, number_of_hidden_layers, max_optimizer_iterations,
+        load_existing_model=True, additional_simulation_data=[sim_dir_and_parameter_tuple])

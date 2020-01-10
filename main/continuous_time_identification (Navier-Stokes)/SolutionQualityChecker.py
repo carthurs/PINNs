@@ -89,7 +89,8 @@ def get_parameter_of_worst_loss(pickled_model_filename, saved_tf_model_filename,
     gathered_losses, gathered_boundary_losses, plot_id = get_losses(pickled_model_filename, saved_tf_model_filename,
                                                                     t_parameter_linspace, plot_id)
 
-    summed_loss = [loss_1 + loss_2 for (loss_1, loss_2) in zip(gathered_losses, gathered_boundary_losses)]
+    summed_loss = [gathered_losses[loss_1_key] + gathered_boundary_losses[loss_2_key] for
+                   (loss_1_key, loss_2_key) in zip(gathered_losses, gathered_boundary_losses)]
     return t_parameter_linspace[np.argmax(summed_loss)], plot_id
 
 
@@ -98,8 +99,9 @@ def plot_losses(gathered_losses, gathered_boundary_losses, plot_id,
     # # this needs to actually be a stored variable not an in-scope variable in the restored class
     # number_of_hidden_layers = 4
     # layers = [3] + [20] * number_of_hidden_layers + [3]
-    parameters_with_real_simulation_data = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0] + \
-                                           additional_real_simulation_data_parameters
+    # parameters_with_real_simulation_data = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0] + \
+    #                                        additional_real_simulation_data_parameters
+    parameters_with_real_simulation_data = additional_real_simulation_data_parameters
 
     print("Blue indicates that simulation data was used at this point. Yellow indicates interpolation.")
     accuracy_threshold = 0.002
@@ -128,11 +130,11 @@ def plot_losses(gathered_losses, gathered_boundary_losses, plot_id,
 
 
 def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, t_parameter_linspace,
-                            plot_id_in, additional_real_simulation_data_parameters=[]):
+                            plot_id_in, additional_real_simulation_data_parameters=[], plot_filename_tag='1'):
     gathered_losses, gathered_boundary_losses, plot_id = get_losses(pickled_model_filename, saved_tf_model_filename,
                                                                     t_parameter_linspace, plot_id_in, plot_figures=plot_all_figures)
 
-    plot_id = plot_losses(gathered_losses, gathered_boundary_losses, plot_id, "8",
+    plot_id = plot_losses(gathered_losses, gathered_boundary_losses, plot_id, plot_filename_tag,
                           additional_real_simulation_data_parameters)
     return plot_id
 
