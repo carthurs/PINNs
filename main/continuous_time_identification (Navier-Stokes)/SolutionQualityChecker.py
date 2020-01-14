@@ -134,16 +134,19 @@ def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_m
     gathered_losses, gathered_boundary_losses, plot_id = get_losses(pickled_model_filename, saved_tf_model_filename,
                                                                     t_parameter_linspace, plot_id_in, plot_figures=plot_all_figures)
 
-    plot_id = plot_losses(gathered_losses, gathered_boundary_losses, plot_id, plot_filename_tag,
-                          additional_real_simulation_data_parameters)
+    # plot_id = plot_losses(gathered_losses, gathered_boundary_losses, plot_id, plot_filename_tag,
+    #                       additional_real_simulation_data_parameters)
     return plot_id
 
 
 if __name__ == '__main__':
 
-    plot_all_figures = False
-    saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
-    pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
+    plot_all_figures = True
+    # saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
+    # pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
+    model_index_to_load = 29
+    saved_tf_model_filename = 'saved_model_{}.tf'.format(model_index_to_load)
+    pickled_model_filename = 'saved_model_{}.pickle'.format(model_index_to_load)
     plot_id_in = 10
 
     t_parameter_linspace = np.linspace(0.0, 6.0, num=61)

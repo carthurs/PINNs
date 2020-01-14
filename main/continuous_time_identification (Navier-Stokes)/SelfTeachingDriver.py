@@ -4,6 +4,7 @@ from NavierStokes import PhysicsInformedNN
 import SolutionQualityChecker
 import numpy as np
 import logging
+import pickle
 
 def create_logger():
     logger = logging.getLogger('SelfTeachingDriver')
@@ -30,16 +31,39 @@ if __name__ == '__main__':
 
     nektar_data_root_path = r'/home/chris/WorkData/nektar++/actual/coarser/'
     reference_data_subfolder = r'tube_10mm_diameter_1pt0Mesh_correctViscosity'
-    num_training_iterations = 200000
-    max_optimizer_iterations = 50000
+
+    N_train_in = 10000
+    test_mode = False
+    if not test_mode:
+        num_training_iterations = 20000
+        max_optimizer_iterations = 50000
+    else:
+        num_training_iterations = 20
+        max_optimizer_iterations = 50
+
     use_pressure_node_in_training = True
     vtu_data_file_name = 'tube10mm_diameter_pt05mesh'
     number_of_hidden_layers = 8
 
-    additional_t_parameters_NS_simulations_run_at = []
-    sim_dir_and_parameter_tuples = []
+    starting_index = 0
+    ending_index = 100
+    sim_dir_and_parameter_tuples_picklefile_basename = 'sim_dir_and_parameter_tuples_{}start.pickle'
+    try:
+        sim_dir_and_parameter_tuples_picklefile = sim_dir_and_parameter_tuples_picklefile_basename.format(starting_index)
 
-    for new_data_iteration in range(9):
+        with open(sim_dir_and_parameter_tuples_picklefile, 'rb') as infile:
+            sim_dir_and_parameter_tuples = pickle.load(infile)
+        additional_t_parameters_NS_simulations_run_at = [pair[1] for pair in sim_dir_and_parameter_tuples]
+        logger.info("Loaded data on previously run simulation iterations from data file {}".format(
+                                                                            sim_dir_and_parameter_tuples_picklefile))
+    except FileNotFoundError:
+        sim_dir_and_parameter_tuples = []
+        additional_t_parameters_NS_simulations_run_at = []
+        logger.warning("Previous simualtion iterations not found. Starting from scratch at iteration {}".format(
+                                                                                                        starting_index))
+
+
+    for new_data_iteration in range(starting_index, ending_index):
         logger.info('Starting iteration {}'.format(new_data_iteration))
         input_data_save_file_tag = new_data_iteration
         logger.info('Nametag is {}'.format(input_data_save_file_tag))
@@ -68,7 +92,9 @@ if __name__ == '__main__':
 
             logger.info('Worst loss was at t={}'.format(t_parameter))
 
-            # Ensure taht we're not repeating a previously-done simulation, by cutting a hole in the permitted
+
+
+            # Ensure that we're not repeating a previously-done simulation, by cutting a hole in the permitted
             # parameter space around the suggested t_parameter, if we already have training data for that parameter.
             exclusion_neighbourhood = np.pi/10  # just something irrational so we don't bump into other values
             t_parameter_linspace_reduced = t_parameter_linspace
@@ -97,12 +123,17 @@ if __name__ == '__main__':
 
         sim_dir_and_parameter_tuples.append(nektar_driver.get_vtu_file_without_extension_and_parameter())
 
+        picklefile_name = sim_dir_and_parameter_tuples_picklefile_basename.format(input_data_save_file_tag+1)
+        with open(picklefile_name, 'wb') as outfile:
+            pickle.dump(sim_dir_and_parameter_tuples, outfile)
+            logger.info("Saved sim_dir_and_parameter_tuples to file {}".format(picklefile_name))
+
         NavierStokes.run(pickled_model_filename, saved_tf_model_filename, input_data_save_file_tag, num_training_iterations,
             use_pressure_node_in_training, vtu_data_file_name, number_of_hidden_layers, max_optimizer_iterations,
-            load_existing_model=start_from_existing_model, additional_simulation_data=sim_dir_and_parameter_tuples,
-                         parent_logger=logger)
+                         N_train_in, load_existing_model=start_from_existing_model,
+                         additional_simulation_data=sim_dir_and_parameter_tuples, parent_logger=logger)
 
-        additional_t_parameters_NS_simulations_run_at.append(t_parameter)
+        additional_t_parameters_NS_simulations_run_at = [pair[1] for pair in sim_dir_and_parameter_tuples]
 
         plot_all_figures = False
         saved_tf_model_filename_post = saved_tf_model_filename.format(input_data_save_file_tag+1)

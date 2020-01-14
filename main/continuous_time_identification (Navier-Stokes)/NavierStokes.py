@@ -517,7 +517,7 @@ def run_training(tensorboard_log_directory_in, model_in, number_of_training_iter
 
 def run(input_pickle_file_template, input_saved_model_template, savefile_tag, number_of_training_iterations,
         use_pressure_node_in_training, vtu_data_file_name, number_of_hidden_layers, max_optimizer_iterations_in,
-        load_existing_model=False, additional_simulation_data=None, parent_logger=None):
+        N_train, load_existing_model=False, additional_simulation_data=None, parent_logger=None):
     tensorboard_log_directory_base = r'./logs'
 
     # Warning: this assumes that the only contents of the logs directory is subdirs with integer names.
@@ -551,8 +551,6 @@ def run(input_pickle_file_template, input_saved_model_template, savefile_tag, nu
         true_viscosity_value = 0.004  # 0.01
         true_density_value = 0.00106  # 1.0
         # number_of_training_iterations = 100000  # 200000
-
-        N_train = 5000
 
         layers = [3] + [20] * number_of_hidden_layers + [3]
         # layers = [3, 20, 20, 20, 20, 20, 2]
@@ -949,6 +947,8 @@ if __name__ == "__main__":
     input_saved_model_template = 'retrained{{}}_retrained3_retrained2_retrained_trained_model_nonoise_{}{}.tf'.format(
         num_training_iterations, file_name_tag)
 
+    N_train_in = 5000
+
     run(input_pickle_file_template, input_saved_model_template, savefile_tag, num_training_iterations,
         use_pressure_node_in_training, vtu_data_file_name, number_of_hidden_layers, max_optimizer_iterations,
-        load_existing_model=True, additional_simulation_data=[sim_dir_and_parameter_tuple])
+        N_train_in, load_existing_model=True, additional_simulation_data=[sim_dir_and_parameter_tuple])
