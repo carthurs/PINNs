@@ -5,6 +5,7 @@ import scipy.interpolate
 import NavierStokes
 import hashlib
 import pickle
+import os
 
 def md5hash_file(filename):
     hasher = hashlib.md5()
@@ -16,14 +17,16 @@ def md5hash_file(filename):
 
 class VtkDataReader(object):
     output_data_version = 1
-    def __init__(self, filename, time_value_in):
+
+    def __init__(self, full_filename, time_value_in, data_cache_path):
         self.time_value = np.expand_dims(np.array([time_value_in]), axis=1)
 
-        file_md5hash = md5hash_file(filename)
-        self.cached_output_filename = "{}.v{}.pickle".format(file_md5hash, VtkDataReader.output_data_version)
+        file_md5hash = md5hash_file(full_filename)
+        cached_output_filename = "{}.v{}.pickle".format(file_md5hash, VtkDataReader.output_data_version)
+        self.cached_output_filename_fullpath = os.path.join(data_cache_path, cached_output_filename)
 
         reader = vtk.vtkXMLUnstructuredGridReader()
-        reader.SetFileName(filename)
+        reader.SetFileName(full_filename)
         reader.Update()
 
         data_reader = reader.GetOutput()
@@ -35,8 +38,8 @@ class VtkDataReader(object):
         return cls(filename, 1.0)
 
     @classmethod
-    def from_single_data_file_with_time_index(cls, filename: str, time_value: float):
-        return cls(filename, time_value)
+    def from_single_data_file_with_time_index(cls, filename: str, time_value: float, data_cache_path):
+        return cls(filename, time_value, data_cache_path)
 
     def get_data_reader_as_numpy_array(self, array_name):
         array_data = self.scalar_point_data.GetScalars(array_name)
@@ -48,7 +51,7 @@ class VtkDataReader(object):
     def get_pinns_format_input_data(self):
         # see if we have already interpolated and saved this data. If not, we had better interpolate it now.
         try:
-            with open(self.cached_output_filename, 'rb') as infile:
+            with open(self.cached_output_filename_fullpath, 'rb') as infile:
                 return_data = pickle.load(infile)
             return return_data
         except FileNotFoundError as e:
@@ -79,7 +82,7 @@ class VtkDataReader(object):
 
         return_data['p_star'] = scipy.interpolate.griddata(irregular_mesh_coordinates, return_data['p_star'],
                                                            full_grid_data_coordinates,
-                                                           method='cubic')
+                                                           method='cubic', fill_value=0.0)
 
         return_data['X_star'] = full_grid_data_coordinates
 
@@ -89,17 +92,17 @@ class VtkDataReader(object):
 
         raw_velocity_data_x_component = scipy.interpolate.griddata(irregular_mesh_coordinates, raw_velocity_data_x_component,
                                                            (np.reshape(xi2, (100 * 50)), np.reshape(yi2, (100 * 50))),
-                                                           method='cubic')
+                                                           method='cubic', fill_value=0.0)
 
         raw_velocity_data_y_component = scipy.interpolate.griddata(irregular_mesh_coordinates, raw_velocity_data_y_component,
                                                            (np.reshape(xi2, (100 * 50)), np.reshape(yi2, (100 * 50))),
-                                                           method='cubic')
+                                                           method='cubic', fill_value=0.0)
 
         velocity_vector_data = np.column_stack((raw_velocity_data_x_component, raw_velocity_data_y_component))
         velocity_data = np.expand_dims(velocity_vector_data, axis=2)  # because the NS code expects a time axis too
         return_data['U_star'] = velocity_data
 
-        with open(self.cached_output_filename, 'wb') as cachefile:
+        with open(self.cached_output_filename_fullpath, 'wb') as cachefile:
             pickle.dump(return_data, cachefile)
 
         return return_data
@@ -109,11 +112,13 @@ class MultipleFileReader(object):
     # Static variables
     key_to_concatenation_axis_map = {'U_star': 2, 'p_star': 1, 't': 0}
 
-    def __init__(self):
+    def __init__(self, cached_data_path_in):
         self.gathered_data = None
+        self.cached_data_path = cached_data_path_in
 
     def add_file_name(self, file_name, parameter_value):
-        data_for_this_file = VtkDataReader.from_single_data_file_with_time_index(file_name, parameter_value) \
+        data_for_this_file = VtkDataReader.from_single_data_file_with_time_index(file_name, parameter_value,
+                                                                                 self.cached_data_path) \
                                                                                     .get_pinns_format_input_data()
         if self.gathered_data is not None:
             # Concatenate with those data arrays which need extending to account for the new data:
@@ -148,12 +153,19 @@ class MultipleFileReader(object):
 
 if __name__ == '__main__':
     # Just a test / usage example - no actual functionality
-    my_reader = VtkDataReader(r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu')
+    # my_reader = VtkDataReader(r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu', os.getcwd())
+    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t3.0/tube_bezier_1pt0mesh.vtu', 1.0, r'/home/chris/WorkData/nektar++/actual/bezier/master_data/')
     print(my_reader.get_data_reader_as_numpy_array('u'))
     print(my_reader.get_point_coordinates()[:,0:2])
-    pinns_input_format_data = my_reader.get_pinns_format_input_data()
 
-    NavierStokes.plot_solution(pinns_input_format_data['X_star'], pinns_input_format_data['U_star'][:, 0, 0], 1,
-                               "True Velocity U", colour_range=[0.0, 1.0])
-    NavierStokes.plot_solution(pinns_input_format_data['X_star'], pinns_input_format_data['U_star'][:, 1, 0], 2,
-                               "True Velocity V", colour_range=[-0.00009, 0.00017])
+    data = my_reader.get_pinns_format_input_data()
+
+    U_star = data['U_star']  # N x 2 x T
+    P_star = data['p_star']  # N x T
+    t_star = data['t']  # T x 1
+    X_star = data['X_star']  # N x 2
+
+    # NavierStokes.plot_solution(pinns_input_format_data['X_star'], data['U_star'][:, 0, 0], 1,
+    #                            "True Velocity U", colour_range=[0.0, 1.0])
+    # NavierStokes.plot_solution(pinns_input_format_data['X_star'], data['U_star'][:, 1, 0], 2,
+    #                            "True Velocity V", colour_range=[-0.00009, 0.00017])

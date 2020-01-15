@@ -23,15 +23,9 @@ class style():
     UNDERLINE = lambda x: '\033[4m' + str(x)
     RESET = lambda x: '\033[0m' + str(x)
 
-def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_linspace, plot_id, plot_figures=False):
+def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_linspace, plot_id,
+               data_directory, plot_figures=False, figure_path='./figures_output/'):
     with tf.device("/gpu:0"):
-
-        # pickled_model_filename = 'trained_model_nonoise_200000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_10_layers.pickle'
-        # saved_tf_model_filename = 'trained_model_nonoise_200000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_10_layers.tf'
-
-
-        # pickled_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05mesht_gradients_zero_ref_pressure.pickle_10_layers.pickle'
-        # saved_tf_model_filename = 'trained_model_nonoise_100000tube10mm_diameter_pt05mesht_gradients_zero_ref_pressure.pickle_10_layers.tf'
 
         tf.reset_default_graph()
         with open(pickled_model_filename, 'rb') as pickled_model_file:
@@ -44,7 +38,7 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_lins
 
         data_file = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/tube10mm_diameter_pt05mesh.vtu'
         # data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
-        data_reader = VtkDataReader.VtkDataReader(data_file, 1.0)
+        data_reader = VtkDataReader.VtkDataReader(data_file, 1.0, data_directory)
         data = data_reader.get_pinns_format_input_data()
         X_star = data['X_star']  # N x 2
         t_star = data['t']  # T x 1
@@ -71,11 +65,11 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_lins
 
             if plot_figures:
                 plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
-                NavierStokes.plot_solution(X_star, u_pred, plot_id, plot_title, relative_folder_path='./figures_output/')
+                NavierStokes.plot_solution(X_star, u_pred, plot_id, plot_title, relative_or_absolute_folder_path=figure_path)
                 plot_id += 1
 
                 plot_title = "Predicted Pressure Parameter {} max observed {}".format(t_parameter, np.max(p_pred))
-                NavierStokes.plot_solution(X_star, p_pred, plot_id, plot_title, relative_folder_path='./figures_output/')
+                NavierStokes.plot_solution(X_star, p_pred, plot_id, plot_title, relative_or_absolute_folder_path=figure_path)
                 plot_id += 1
 
         np.savetxt('tempu2.txt', model.get_solution(x_star, y_star, t_star * 0 + 2.5))
@@ -85,9 +79,10 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_lins
     return gathered_losses, gathered_boundary_losses, plot_id
 
 
-def get_parameter_of_worst_loss(pickled_model_filename, saved_tf_model_filename, t_parameter_linspace, plot_id):
+def get_parameter_of_worst_loss(pickled_model_filename, saved_tf_model_filename, t_parameter_linspace, plot_id,
+                                data_dir_in):
     gathered_losses, gathered_boundary_losses, plot_id = get_losses(pickled_model_filename, saved_tf_model_filename,
-                                                                    t_parameter_linspace, plot_id)
+                                                                    t_parameter_linspace, plot_id, data_dir_in)
 
     summed_loss = [gathered_losses[loss_1_key] + gathered_boundary_losses[loss_2_key] for
                    (loss_1_key, loss_2_key) in zip(gathered_losses, gathered_boundary_losses)]
@@ -95,7 +90,8 @@ def get_parameter_of_worst_loss(pickled_model_filename, saved_tf_model_filename,
 
 
 def plot_losses(gathered_losses, gathered_boundary_losses, plot_id,
-                additional_fig_filename_tag, additional_real_simulation_data_parameters=[]):
+                additional_fig_filename_tag, additional_real_simulation_data_parameters=[],
+                figure_path='./figures_output/'):
     # # this needs to actually be a stored variable not an in-scope variable in the restored class
     # number_of_hidden_layers = 4
     # layers = [3] + [20] * number_of_hidden_layers + [3]
@@ -124,18 +120,26 @@ def plot_losses(gathered_losses, gathered_boundary_losses, plot_id,
     y_axis_range = (1e-8, 1e4)
     NavierStokes.plot_graph(x_data, y_data, plot_id, 'Loss over Parameters', scatter_x, scatter_y,
                             additional_fig_filename_tag, second_panel_y_data, y_range_1=y_axis_range,
-                            y_range_2=y_axis_range, y_range_3=y_axis_range, relative_folder_path='./figures_output/')
+                            y_range_2=y_axis_range, y_range_3=y_axis_range,
+                            relative_or_absolute_output_folder=figure_path)
     plot_id += 1
     return plot_id
 
 
 def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, t_parameter_linspace,
-                            plot_id_in, additional_real_simulation_data_parameters=[], plot_filename_tag='1'):
+                            plot_id_in, data_dir_in,
+                            additional_real_simulation_data_parameters=(), plot_filename_tag='1'):
     gathered_losses, gathered_boundary_losses, plot_id = get_losses(pickled_model_filename, saved_tf_model_filename,
-                                                                    t_parameter_linspace, plot_id_in, plot_figures=plot_all_figures)
+                                                                    t_parameter_linspace, plot_id_in,
+                                                                    data_dir_in, plot_figures=plot_all_figures,
+                                                                    figure_path='{}/figures_output/'.format(data_dir_in))
 
-    # plot_id = plot_losses(gathered_losses, gathered_boundary_losses, plot_id, plot_filename_tag,
-    #                       additional_real_simulation_data_parameters)
+    plot_id = plot_losses(gathered_losses,
+                          gathered_boundary_losses,
+                          plot_id,
+                          plot_filename_tag,
+                          additional_real_simulation_data_parameters,
+                          figure_path='{}/figures_output/'.format(data_dir_in))
     return plot_id
 
 
@@ -150,4 +154,5 @@ if __name__ == '__main__':
     plot_id_in = 10
 
     t_parameter_linspace = np.linspace(0.0, 6.0, num=61)
-    compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, t_parameter_linspace, plot_id_in)
+    compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, t_parameter_linspace,
+                            plot_id_in, os.getcwd())
