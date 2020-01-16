@@ -522,7 +522,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
                    N_train, load_existing_model=False, additional_simulation_data=None, parent_logger=None,
                    data_caching_directory=os.getcwd()):
 
-    tensorboard_log_directory_base = r'./logs'
+    tensorboard_log_directory_base = '{}/logs'.format(data_caching_directory)
 
     # Warning: this assumes that the only contents of the logs directory is subdirs with integer names.
     integer_log_subdir_names = [int(filename) for filename in os.listdir(tensorboard_log_directory_base)]

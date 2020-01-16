@@ -1,0 +1,6 @@
+{
+  "navier_stokes_solver_path": "/home/chris/workspace/nektapp/nektar++/build/dist/bin/IncNavierStokesSolver",
+  "nektar_field_convert_path": "/home/chris/workspace/nektapp/nektar++/build/dist/bin/FieldConvert",
+  "nektar_mesh_gen_path": "/home/chris/workspace/nektapp/nektar++/build/dist/bin/NekMesh",
+  "num_cpu_cores": "6"
+}

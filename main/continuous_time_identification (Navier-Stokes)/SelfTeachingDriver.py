@@ -45,7 +45,7 @@ if __name__ == '__main__':
     parameter_range_end = 6.0
     number_of_parameter_points = int((parameter_range_end - parameter_range_start)*10) + 1
 
-    starting_index = 4
+    starting_index = 6
     ending_index = 100
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     N_train_in = 5000
     test_mode = False
     if not test_mode:
-        num_training_iterations = 200000
+        num_training_iterations = 20000
         max_optimizer_iterations = 50000
     else:
         num_training_iterations = 20

@@ -36,7 +36,9 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_lins
 
         tf.train.Saver().restore(model.sess, saved_tf_model_filename)
 
-        data_file = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/tube10mm_diameter_pt05mesh.vtu'
+        # TODO make sure this actually works with the right vtu file
+        data_file = r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0/tube_bezier_1pt0mesh.vtu'
+        # data_file = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/tube10mm_diameter_pt05mesh.vtu'
         # data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
         data_reader = VtkDataReader.VtkDataReader(data_file, 1.0, data_directory)
         data = data_reader.get_pinns_format_input_data()
@@ -112,8 +114,10 @@ def plot_losses(gathered_losses, gathered_boundary_losses, plot_id,
         else:
             print(style.YELLOW("%.2f" % key), value)
 
-    x_data = list(gathered_losses.keys())
-    y_data = list(gathered_losses.values())
+    print(style.RESET("Resetting terminal colours..."))
+
+    x_data = sorted(gathered_losses)
+    y_data = [gathered_losses[x] for x in x_data]
     second_panel_y_data = list(gathered_boundary_losses.values())
     scatter_x = parameters_with_real_simulation_data
     scatter_y = [gathered_losses[v] for v in scatter_x]
@@ -129,6 +133,7 @@ def plot_losses(gathered_losses, gathered_boundary_losses, plot_id,
 def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, t_parameter_linspace,
                             plot_id_in, data_dir_in,
                             additional_real_simulation_data_parameters=(), plot_filename_tag='1'):
+
     gathered_losses, gathered_boundary_losses, plot_id = get_losses(pickled_model_filename, saved_tf_model_filename,
                                                                     t_parameter_linspace, plot_id_in,
                                                                     data_dir_in, plot_figures=plot_all_figures,
@@ -148,11 +153,12 @@ if __name__ == '__main__':
     plot_all_figures = True
     # saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
     # pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
-    model_index_to_load = 29
-    saved_tf_model_filename = 'saved_model_{}.tf'.format(model_index_to_load)
-    pickled_model_filename = 'saved_model_{}.pickle'.format(model_index_to_load)
+    model_index_to_load = 6
+    data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data/'
+    saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
+    pickled_model_filename = os.path.join(data_root, 'saved_model_{}.pickle'.format(model_index_to_load))
     plot_id_in = 10
 
     t_parameter_linspace = np.linspace(0.0, 6.0, num=61)
     compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, t_parameter_linspace,
-                            plot_id_in, os.getcwd())
+                            plot_id_in, data_root)
