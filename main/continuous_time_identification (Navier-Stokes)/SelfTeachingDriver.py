@@ -6,6 +6,7 @@ import numpy as np
 import logging
 import pickle
 import os
+import sys
 
 def create_logger():
     logger = logging.getLogger('SelfTeachingDriver')
@@ -104,16 +105,24 @@ if __name__ == '__main__':
             # parameter space around the suggested t_parameter, if we already have training data for that parameter.
             exclusion_neighbourhood = np.pi/10  # just something irrational so we don't bump into other values
             t_parameter_linspace_reduced = t_parameter_linspace
+            while_loop_counter = 0
             while t_parameter in additional_t_parameters_NS_simulations_run_at:
                 t_parameter_linspace_reduced_cached = t_parameter_linspace_reduced
 
                 t_parameter_linspace_reduced = [v for v in t_parameter_linspace_reduced_cached
                                                 if abs(v-t_parameter) > exclusion_neighbourhood]
 
+                if len(t_parameter_linspace_reduced) == 0:
+                    logger.info("Could not find another parameter value to simulate at. Parameter space is saturated;\
+                                 no further simulations possible with an exclusion_neighbourhood of size {}."
+                                .format(while_loop_counter, exclusion_neighbourhood))
+                    sys.exit(0)
+
                 t_parameter, plot_id = SolutionQualityChecker.get_parameter_of_worst_loss(
                     pickled_model_filename.format(input_data_save_file_tag),
                     saved_tf_model_filename.format(input_data_save_file_tag),
                     t_parameter_linspace_reduced, plot_id, master_model_data_root_path)
+                while_loop_counter += 1
 
             start_from_existing_model = True
 
