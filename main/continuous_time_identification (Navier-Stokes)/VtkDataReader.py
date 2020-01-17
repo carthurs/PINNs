@@ -6,6 +6,7 @@ import NavierStokes
 import hashlib
 import pickle
 import os
+import plotly.graph_objects as go
 
 def md5hash_file(filename):
     hasher = hashlib.md5()
@@ -29,9 +30,9 @@ class VtkDataReader(object):
         reader.SetFileName(full_filename)
         reader.Update()
 
-        data_reader = reader.GetOutput()
-        self.scalar_point_data = data_reader.GetPointData()
-        self.points_vtk = data_reader.GetPoints().GetData()
+        self.unstructured_grid = reader.GetOutput()
+        self.scalar_point_data = self.unstructured_grid.GetPointData()
+        self.points_vtk = self.unstructured_grid.GetPoints().GetData()
 
     @classmethod
     def from_single_data_file(cls, filename: str):
@@ -107,6 +108,45 @@ class VtkDataReader(object):
 
         return return_data
 
+    def plotly_plot_mesh(self):
+        raw_coordinates_data = self.get_point_coordinates()
+        x_coords = raw_coordinates_data[:, 0]
+        y_coords = raw_coordinates_data[:, 1]
+        z_coords_upperplane = raw_coordinates_data[:, 2] + 2.0
+
+        number_of_triangles = self.unstructured_grid.GetNumberOfCells()
+        triangle_firstnodes = [0] * number_of_triangles
+        triangle_secondnodes = [0] * number_of_triangles
+        triangle_thirdnodes = [0] * number_of_triangles
+
+        for triangle_idx in range(number_of_triangles):
+            triangle_nodes = self.unstructured_grid.GetCell(triangle_idx).GetPointIds()
+            triangle_firstnodes[triangle_idx] = triangle_nodes.GetId(0)
+            triangle_secondnodes[triangle_idx] = triangle_nodes.GetId(1)
+            triangle_thirdnodes[triangle_idx] = triangle_nodes.GetId(2)
+
+        pressure_plot = go.Mesh3d(x=x_coords, y=y_coords, z=z_coords_upperplane,
+                                  i=triangle_firstnodes, j=triangle_secondnodes, k=triangle_thirdnodes,
+                                  intensity=self.get_data_reader_as_numpy_array('p'),
+                                  colorscale='Picnic',
+                                  colorbar_title='Pressure')
+
+
+        mydata = self.get_pinns_format_input_data()
+
+        z_coords_lowerplane = mydata['X_star'][:, 0]*0.0 - 2.0
+        velocity_plot = go.Cone(x=mydata['X_star'][:, 0], y=mydata['X_star'][:, 1], z=z_coords_lowerplane,
+                                u=mydata['U_star'][:, 0, 0],
+                                v=mydata['U_star'][:, 1, 0],
+                                w=mydata['U_star'][:, 1, 0] * 0.0,
+                                sizeref=10.0,
+                                colorscale='RdBu',
+                                colorbar=dict(x=0.0),
+                                colorbar_title='Velocity Magnitude')
+
+        fig = go.Figure(data=[velocity_plot, pressure_plot])
+        fig.show()
+
 
 class MultipleFileReader(object):
     # Static variables
@@ -149,8 +189,6 @@ class MultipleFileReader(object):
         return self.gathered_data
 
 
-
-
 if __name__ == '__main__':
     # Just a test / usage example - no actual functionality
     # my_reader = VtkDataReader(r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu', os.getcwd())
@@ -164,6 +202,8 @@ if __name__ == '__main__':
     P_star = data['p_star']  # N x T
     t_star = data['t']  # T x 1
     X_star = data['X_star']  # N x 2
+
+    my_reader.plotly_plot_mesh()
 
     # NavierStokes.plot_solution(pinns_input_format_data['X_star'], data['U_star'][:, 0, 0], 1,
     #                            "True Velocity U", colour_range=[0.0, 1.0])
