@@ -6,6 +6,7 @@ import pickle
 import numpy as np
 import os
 import sys
+import tqdm
 
 if sys.platform.lower() == "win32":
     os.system('color')
@@ -23,8 +24,25 @@ class style():
     UNDERLINE = lambda x: '\033[4m' + str(x)
     RESET = lambda x: '\033[0m' + str(x)
 
+def read_mesh_file(mesh_filename, cached_data_dir):
+    # data_file = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/tube10mm_diameter_pt05mesh.vtu'
+    # data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
+    data_reader = VtkDataReader.VtkDataReader(mesh_filename, 1.0, cached_data_dir)
+    data = data_reader.get_data_by_mode(VtkDataReader.VtkDataReader.MODE_STRUCTURED)
+    X_star = data['X_star']  # N x 2
+    t_star = data['t']  # T x 1
+
+    N = X_star.shape[0]
+
+    TT = np.tile(t_star, (1, N)).T  # N x T
+
+    snap = np.array([0])
+    t_star = TT[:, snap]
+
+    return X_star, t_star
+
 def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_linspace, plot_id,
-               data_directory, plot_figures=False, figure_path='./figures_output/'):
+               data_directory, vtu_file_name_template,  plot_figures=False, figure_path='./figures_output/'):
     with tf.device("/gpu:0"):
 
         tf.reset_default_graph()
@@ -36,27 +54,15 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_lins
 
         tf.train.Saver().restore(model.sess, saved_tf_model_filename)
 
-        # TODO make sure this actually works with the right vtu file
-        data_file = r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0/tube_bezier_1pt0mesh.vtu'
-        # data_file = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/tube10mm_diameter_pt05mesh.vtu'
-        # data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
-        data_reader = VtkDataReader.VtkDataReader(data_file, 1.0, data_directory)
-        data = data_reader.get_pinns_format_input_data()
-        X_star = data['X_star']  # N x 2
-        t_star = data['t']  # T x 1
-
-        N = X_star.shape[0]
-
-        TT = np.tile(t_star, (1, N)).T  # N x T
-
-        x_star = X_star[:, 0:1]
-        y_star = X_star[:, 1:2]
-        snap = np.array([0])
-        t_star = TT[:, snap]
-
         gathered_losses = dict()
         gathered_boundary_losses = dict()
-        for t_parameter in t_parameter_linspace:  #[1, 1.5, 2, 2.5, 3, 4, 3.5, 4.5, 2.2, 1.1, 0.5, -0.5, 5.0, 0.0]:
+        for t_parameter in tqdm.tqdm(t_parameter_linspace, desc='[Computing loss over param space]'):
+            data_file = vtu_file_name_template.format(t_parameter)
+            X_star, t_star = read_mesh_file(data_file, data_directory)
+
+            x_star = X_star[:, 0:1]
+            y_star = X_star[:, 1:2]
+
             t_star = t_star * 0 + t_parameter
             u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
 
@@ -82,9 +88,10 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_lins
 
 
 def get_parameter_of_worst_loss(pickled_model_filename, saved_tf_model_filename, t_parameter_linspace, plot_id,
-                                data_dir_in):
+                                data_dir_in, vtu_file_name_template):
     gathered_losses, gathered_boundary_losses, plot_id = get_losses(pickled_model_filename, saved_tf_model_filename,
-                                                                    t_parameter_linspace, plot_id, data_dir_in)
+                                                                    t_parameter_linspace, plot_id, data_dir_in,
+                                                                    vtu_file_name_template)
 
     summed_loss = [gathered_losses[loss_1_key] + gathered_boundary_losses[loss_2_key] for
                    (loss_1_key, loss_2_key) in zip(gathered_losses, gathered_boundary_losses)]
@@ -131,12 +138,13 @@ def plot_losses(gathered_losses, gathered_boundary_losses, plot_id,
 
 
 def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, t_parameter_linspace,
-                            plot_id_in, data_dir_in,
+                            plot_id_in, data_dir_in, vtu_file_name_template,
                             additional_real_simulation_data_parameters=(), plot_filename_tag='1'):
 
     gathered_losses, gathered_boundary_losses, plot_id = get_losses(pickled_model_filename, saved_tf_model_filename,
                                                                     t_parameter_linspace, plot_id_in,
-                                                                    data_dir_in, plot_figures=plot_all_figures,
+                                                                    data_dir_in, vtu_file_name_template,
+                                                                    plot_figures=plot_all_figures,
                                                                     figure_path='{}/figures_output/'.format(data_dir_in))
 
     plot_id = plot_losses(gathered_losses,

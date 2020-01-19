@@ -35,10 +35,14 @@ if __name__ == '__main__':
     # nektar_data_root_path = r'/home/chris/WorkData/nektar++/actual/coarser/'
     reference_data_subfolder = r'basic'
     # reference_data_subfolder = r'tube_10mm_diameter_1pt0Mesh_correctViscosity'
+    simulation_subfolder_template = reference_data_subfolder + r'_t{}/'
     master_model_data_root_path = r'/home/chris/WorkData/nektar++/actual/bezier/master_data/'
     # master_model_data_root_path = r'/home/chris/workspace/PINNs/PINNs/main/continuous_time_identification (Navier-Stokes)'
     vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
     # vtu_file_name = 'tube10mm_diameter_1pt0mesh'
+    reference_vtu_filename_template = nektar_data_root_path + simulation_subfolder_template + \
+                                        vtu_and_xml_file_basename + '.vtu'
+
     use_pressure_node_in_training = True
     number_of_hidden_layers = 8
 
@@ -46,7 +50,7 @@ if __name__ == '__main__':
     parameter_range_end = 6.0
     number_of_parameter_points = int((parameter_range_end - parameter_range_start)*10) + 1
 
-    starting_index = 6
+    starting_index = 5
     ending_index = 100
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
@@ -97,7 +101,8 @@ if __name__ == '__main__':
             t_parameter, plot_id = SolutionQualityChecker.get_parameter_of_worst_loss(
                 pickled_model_filename.format(input_data_save_file_tag),
                 saved_tf_model_filename.format(input_data_save_file_tag),
-                t_parameter_linspace, plot_id, master_model_data_root_path)
+                t_parameter_linspace, plot_id, master_model_data_root_path,
+                reference_vtu_filename_template)
 
             logger.info('Worst loss was at t={}'.format(t_parameter))
 
@@ -121,7 +126,8 @@ if __name__ == '__main__':
                 t_parameter, plot_id = SolutionQualityChecker.get_parameter_of_worst_loss(
                     pickled_model_filename.format(input_data_save_file_tag),
                     saved_tf_model_filename.format(input_data_save_file_tag),
-                    t_parameter_linspace_reduced, plot_id, master_model_data_root_path)
+                    t_parameter_linspace_reduced, plot_id, master_model_data_root_path,
+                    reference_vtu_filename_template)
                 while_loop_counter += 1
 
             start_from_existing_model = True
@@ -129,8 +135,11 @@ if __name__ == '__main__':
         info_string = 'Will get data for parameter value t={}'.format(t_parameter)
         logger.info(info_string)
 
-        nektar_driver = NektarDriver.NektarDriver(nektar_data_root_path, reference_data_subfolder, t_parameter,
-                                                  vtu_and_xml_file_basename)
+        nektar_driver = NektarDriver.NektarDriver(nektar_data_root_path, reference_data_subfolder,
+                                                  simulation_subfolder_template,
+                                                  t_parameter,
+                                                  vtu_and_xml_file_basename,
+                                                  logger)
         nektar_driver.run_simulation()
 
         sim_dir_and_parameter_tuples.append(nektar_driver.get_vtu_file_without_extension_and_parameter())
@@ -152,8 +161,14 @@ if __name__ == '__main__':
         saved_tf_model_filename_post = saved_tf_model_filename.format(input_data_save_file_tag+1)
         pickled_model_filename_post = pickled_model_filename.format(input_data_save_file_tag+1)
 
+        # Ensure that there are meshes for all the t-parameters we're about to query for:
+        for t_value in t_parameter_linspace:
+            logger.info("Creating mesh for evaluating the predicted solution when parameter={}".format(t_value))
+            nektar_driver.generate_vtu_mesh_for_parameter(t_value)
+
         SolutionQualityChecker.compute_and_plot_losses(plot_all_figures, pickled_model_filename_post,
                                                        saved_tf_model_filename_post, t_parameter_linspace,
                                                        plot_id, master_model_data_root_path,
-                                                       additional_t_parameters_NS_simulations_run_at,
+                                                       reference_vtu_filename_template,
+                                                       additional_real_simulation_data_parameters=additional_t_parameters_NS_simulations_run_at,
                                                        plot_filename_tag=str(new_data_iteration))

@@ -332,11 +332,11 @@ class PhysicsInformedNN:
         self.loss_history_write_index = 0
 
         start_time = time.time()
-        for it in tqdm.tqdm(range(nIter)):
+        for it in tqdm.tqdm(range(nIter), desc='[Training...]'):
             self.sess.run(self.train_op_Adam, tf_dict)
 
             # Print
-            if it % 10 == 0:
+            if it % 40 == 0:
                 elapsed = time.time() - start_time
                 loss_value, loss_summary_retrieved, loss_vel_summary_retrieved, loss_ns_summary_retrieved, other_summary_scalars_retrieved = \
                                                     self.sess.run([self.loss, self.loss_summary,
@@ -351,13 +351,14 @@ class PhysicsInformedNN:
                 for summary in other_summary_scalars_retrieved:
                     summary_writer.add_summary(summary, it)
 
-                if it % 5000 == 0:
+                # if it % 5000 == 0:
                     # Show an image
-                    _, _, p_star, _ = self.predict(x_predict, y_predict, t_predict)
-                    image = np.reshape(p_star, (-1, 50, 100, 1))
-                    summary_image_op = tf.summary.image("Snapshot", image)
-                    summary_image = self.sess.run(summary_image_op)
-                    summary_writer.add_summary(summary_image)
+                #TODO make this plot meshes - probably resample onto a regular grid to do this
+                    # _, _, p_star, _ = self.predict(x_predict, y_predict, t_predict)
+                    # image = np.reshape(p_star, (-1, 50, 100, 1))
+                    # summary_image_op = tf.summary.image("Snapshot", image)
+                    # summary_image = self.sess.run(summary_image_op)
+                    # summary_writer.add_summary(summary_image)
 
                 if self.discover_navier_stokes_parameters:
                     lambda_1_value = self.sess.run(self.lambda_1)
@@ -560,13 +561,13 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
         # Load Data
-        # data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
+        # training_data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
 
         # data_directory = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/'
-        # data = VtkDataReader.VtkDataReader.from_single_data_file(data_directory + vtu_data_file_name + '.vtu'
+        # training_data = VtkDataReader.VtkDataReader.from_single_data_file(data_directory + vtu_data_file_name + '.vtu'
         #                                            ).get_pinns_format_input_data()
 
-        data_reader = VtkDataReader.MultipleFileReader(data_caching_directory)
+        data_reader = VtkDataReader.MultipleFileReader(data_caching_directory, mode='unstructured')
         base_base_data_directory = r'/home/chris/WorkData/nektar++/actual/'
         # file_names_and_parameter_values = [(data_directory + vtu_data_file_name, 1.0),
         #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_doubleInflow/' + vtu_data_file_name, 2.0),
@@ -582,45 +583,26 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         if parent_logger is not None:
             parent_logger.info("NavierStokes.py is loading the following datafiles: {}".format(file_names_and_parameter_values))
 
-        additional_navier_stokes_only_datapoints = [1.7, 2.3, 2.7, 5.0, 0.0]
-        for additional_ns_only_point in additional_navier_stokes_only_datapoints:
-            data_reader.add_point_for_navier_stokes_loss_only(additional_ns_only_point)
+        # additional_navier_stokes_only_datapoints = [1.7, 2.3, 2.7, 5.0, 0.0]
+        # for additional_ns_only_point in additional_navier_stokes_only_datapoints:
+        #     data_reader.add_point_for_navier_stokes_loss_only(additional_ns_only_point)
 
-        # For now, we recycle the T dimension as the generic parameter dimension for steady flow data. Can
+        # For now, we recycle the T dimension as the generic parameter dimension for steady flow training_data. Can
         # adjust this later.
-        data = data_reader.get_pinns_format_input_data()
+        training_data = data_reader.get_training_data()
 
-        U_star = data['U_star']  # N x 2 x T
-        P_star = data['p_star']  # N x T
-        t_star = data['t']  # T x 1
-        X_star = data['X_star']  # N x 2
-
-        N = X_star.shape[0]
-        T = t_star.shape[0]
-
-        # Rearrange Data - NOTE: the .T here is the transpose of the numpy array - it's not the same as the variable T in
-        # the enclosing namespace
-        XX = np.tile(X_star[:, 0:1], (1, T))  # N x T
-        YY = np.tile(X_star[:, 1:2], (1, T))  # N x T
-        TT = np.tile(t_star, (1, N)).T  # N x T
-
-        UU = U_star[:,0,:]  # N x T
-        VV = U_star[:,1,:]  # N x T
-        PP = P_star  # N x T
-
-        x = XX.flatten()[:,None]  # NT x 1
-        y = YY.flatten()[:,None]  # NT x 1
-        t = TT.flatten()[:,None]  # NT x 1
-
-        u = UU.flatten()[:,None]  # NT x 1
-        v = VV.flatten()[:,None]  # NT x 1
-        p = PP.flatten()[:,None]  # NT x 1
+        x = training_data['x']
+        y = training_data['y']
+        t = training_data['t']
+        u = training_data['u']
+        v = training_data['v']
+        p = training_data['p']
 
         ######################################################################
         ######################## Noiseles Data ###############################
         ######################################################################
         # Training Data
-        idx = np.random.choice(N*T, N_train, replace=False)
+        idx = np.random.choice(x.shape[0], N_train, replace=False)
         x_train = x[idx, :]
         y_train = y[idx, :]
         t_train = t[idx, :]
@@ -628,19 +610,20 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         v_train = v[idx, :]
 
         # Test Data
-        snap = np.array([0])  #np.array([int(np.floor(T/2))])
-        print("snap", snap)
-        x_star = X_star[:, 0:1]
-        y_star = X_star[:, 1:2]
-        t_star = TT[:, snap]
+        test_data_parameter_t = t_train[0, 0]  # TODO make this actually test on a slice of our choosing, rather than on a fuller slice of the training data. This is ok, but we can do better.
+        test_data = data_reader.get_test_data(test_data_parameter_t)
 
-        u_star = U_star[:,0,snap]
-        v_star = U_star[:,1,snap]
-        p_star = P_star[:,snap]
+        X_star = test_data['X_star']  # TODO this is somewhat redundant; X_star and (X_test and Y_test) contain the same data. Refactor.
+        X_test = test_data['x']
+        Y_test = test_data['y']
+        t_test = test_data['t']
+        u_test = test_data['u']
+        v_test = test_data['v']
+        p_test = test_data['p']
 
         if use_pressure_node_in_training:
             # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
-            p_single_reference_node = list(map(lambda x: x.item(), [x_star[0], y_star[0], t_star[0], p_star[0]]))
+            p_single_reference_node = list(map(lambda x: x.item(), [X_test[0], Y_test[0], t_test[0], p_test[0]]))
         else:
             p_single_reference_node = None
 
@@ -664,23 +647,23 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
             if train_model_further_with_new_data:
                 model.reset_training_data(x_train, y_train, t_train, u_train, v_train)
 
-                train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
-                                       t_star, pickled_model_filename_out, saved_tf_model_filename_out)
+                train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
+                                       t_test, pickled_model_filename_out, saved_tf_model_filename_out)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node,
                                       discover_navier_stokes_parameters, true_viscosity_value, true_density_value,
                                       max_optimizer_iterations_in)
 
-            train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, x_star, y_star,
-                                   t_star, pickled_model_filename_out, saved_tf_model_filename_out)
+            train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
+                                   t_test, pickled_model_filename_out, saved_tf_model_filename_out)
 
         # Prediction
         if plot_lots:
             plot_id = 10
             for t_parameter in [1, 1.5, 2, 2.5, 3, 4, 3.5, 4.5, 2.2, 1.1, 0.5, -0.5, 5.0, 0.0]:
-                t_star = t_star * 0 + t_parameter
-                u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
+                t_test = t_test * 0 + t_parameter
+                u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test)
                 plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
                 plot_solution(X_star, u_pred, plot_id, plot_title)
                 plot_id += 1
@@ -689,15 +672,16 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
                 plot_solution(X_star, p_pred, plot_id, plot_title)
                 plot_id += 1
 
-        t_star = t_star * 0 + 1.0
-        u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
+        t_test = t_test * 0 + 1.0
+        u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test)
         lambda_1_value = model.sess.run(model.lambda_1)
         lambda_2_value = model.sess.run(model.lambda_2)
 
         # Error
-        error_u = np.linalg.norm(u_star-u_pred, 2)/np.linalg.norm(u_star, 2)
-        error_v = np.linalg.norm(v_star-v_pred, 2)/np.linalg.norm(v_star, 2)
-        error_p = np.linalg.norm(p_star-p_pred, 2)/np.linalg.norm(p_star, 2)
+        error_u = np.linalg.norm(u_test-u_pred, 2)/np.linalg.norm(u_test, 2)
+        error_v = np.linalg.norm(v_test-v_pred, 2)/np.linalg.norm(v_test, 2)
+        error_p = np.linalg.norm(np.squeeze(p_test)-p_pred, 2)
+        error_p = error_p/np.linalg.norm(p_test, 2)
 
         error_lambda_1 = np.abs(lambda_1_value - true_density_value)/true_density_value*100
         error_lambda_2 = np.abs(lambda_2_value - true_viscosity_value)/true_viscosity_value * 100
@@ -713,9 +697,8 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         plot_solution(X_star, u_pred, 1, "Predicted Velocity U")
         plot_solution(X_star, v_pred, 2, "Predicted Velocity V")
         plot_solution(X_star, p_pred, 3, "Predicted Pressure")
-        plot_solution(X_star, p_star, 4, "True Pressure")
-        print("shapes: {} {}".format(p_star.shape, p_pred.shape))
-        plot_solution(X_star, p_star[:, 0] - p_pred, 5, "Pressure Error")
+        plot_solution(X_star, p_test, 4, "True Pressure")
+        plot_solution(X_star, p_test[:, 0] - p_pred, 5, "Pressure Error")
         plot_solution(X_star, psi_pred, 6, "Psi")
 
         np.savetxt('loss_history_{}_{}.dat'.format(number_of_training_iterations, model.get_max_optimizer_iterations()), model.getLossHistory())
@@ -723,7 +706,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         np.savetxt("p_pred_saved.dat", p_pred)
         np.savetxt("X_star_saved.dat", X_star)
 
-        print("Pressure at 2nd node: True: {}, Predicted: {}, Difference: {}". format(p_star[0], p_pred[0], p_star[0]-p_pred[0]))
+        print("Pressure at 2nd node: True: {}, Predicted: {}, Difference: {}". format(p_test[0], p_pred[0], p_test[0]-p_pred[0]))
 
         # Predict for plotting
         lb = X_star.min(0)
@@ -736,7 +719,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         UU_star = griddata(X_star, u_pred.flatten(), (X, Y), method='cubic')
         VV_star = griddata(X_star, v_pred.flatten(), (X, Y), method='cubic')
         PP_star = griddata(X_star, p_pred.flatten(), (X, Y), method='cubic')
-        P_exact = griddata(X_star, p_star.flatten(), (X, Y), method='cubic')
+        P_exact = griddata(X_star, p_test.flatten(), (X, Y), method='cubic')
 
         if do_noisy_data_case:
             ######################################################################
@@ -805,7 +788,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # ax.set_title('Vorticity', fontsize = 10)
         #
         #
-        # ####### Row 1: Training data ##################
+        # ####### Row 1: Training training_data ##################
         # ########      u(t,x,y)     ###################
         # gs1 = gridspec.GridSpec(1, 2)
         # gs1.update(top=1-2/4, bottom=0.0, left=0.01, right=0.99, wspace=0)
@@ -813,7 +796,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # ax.axis('off')
         #
         # r1 = [x_star.min(), x_star.max()]
-        # r2 = [data['t'].min(), data['t'].max()]
+        # r2 = [training_data['t'].min(), training_data['t'].max()]
         # r3 = [y_star.min(), y_star.max()]
         #
         # for s, e in combinations(np.array(list(product(r1,r2,r3))), 2):
@@ -823,10 +806,10 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # ax.scatter(x_train, t_train, y_train, s = 0.1)
         # ax.contourf(X,UU_star,Y, zdir = 'y', offset = t_star.mean(), cmap='rainbow', alpha = 0.8)
         #
-        # ax.text(x_star.mean(), data['t'].min() - 1, y_star.min() - 1, '$x$')
-        # ax.text(x_star.max()+1, data['t'].mean(), y_star.min() - 1, '$t$')
-        # ax.text(x_star.min()-1, data['t'].min() - 0.5, y_star.mean(), '$y$')
-        # ax.text(x_star.min()-3, data['t'].mean(), y_star.max() + 1, '$u(t,x,y)$')
+        # ax.text(x_star.mean(), training_data['t'].min() - 1, y_star.min() - 1, '$x$')
+        # ax.text(x_star.max()+1, training_data['t'].mean(), y_star.min() - 1, '$t$')
+        # ax.text(x_star.min()-1, training_data['t'].min() - 0.5, y_star.mean(), '$y$')
+        # ax.text(x_star.min()-3, training_data['t'].mean(), y_star.max() + 1, '$u(t,x,y)$')
         # ax.set_xlim3d(r1)
         # ax.set_ylim3d(r2)
         # ax.set_zlim3d(r3)
@@ -837,7 +820,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # ax.axis('off')
         #
         # r1 = [x_star.min(), x_star.max()]
-        # r2 = [data['t'].min(), data['t'].max()]
+        # r2 = [training_data['t'].min(), training_data['t'].max()]
         # r3 = [y_star.min(), y_star.max()]
         #
         # for s, e in combinations(np.array(list(product(r1,r2,r3))), 2):
@@ -847,10 +830,10 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # ax.scatter(x_train, t_train, y_train, s = 0.1)
         # ax.contourf(X,VV_star,Y, zdir = 'y', offset = t_star.mean(), cmap='rainbow', alpha = 0.8)
         #
-        # ax.text(x_star.mean(), data['t'].min() - 1, y_star.min() - 1, '$x$')
-        # ax.text(x_star.max()+1, data['t'].mean(), y_star.min() - 1, '$t$')
-        # ax.text(x_star.min()-1, data['t'].min() - 0.5, y_star.mean(), '$y$')
-        # ax.text(x_star.min()-3, data['t'].mean(), y_star.max() + 1, '$v(t,x,y)$')
+        # ax.text(x_star.mean(), training_data['t'].min() - 1, y_star.min() - 1, '$x$')
+        # ax.text(x_star.max()+1, training_data['t'].mean(), y_star.min() - 1, '$t$')
+        # ax.text(x_star.min()-1, training_data['t'].min() - 0.5, y_star.mean(), '$y$')
+        # ax.text(x_star.min()-3, training_data['t'].mean(), y_star.max() + 1, '$v(t,x,y)$')
         # ax.set_xlim3d(r1)
         # ax.set_ylim3d(r2)
         # ax.set_zlim3d(r3)
@@ -907,7 +890,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # s = s + r' v_t + (u v_x + v v_y) = -p_y + 0.01 (v_{xx} + v_{yy})'
         # s = s + r' \end{array}$ \\ '
         # s = s + r' \hline'
-        # s = s + r' Identified PDE (clean data) & $\begin{array}{c}'
+        # s = s + r' Identified PDE (clean training_data) & $\begin{array}{c}'
         # s = s + r' u_t + %.3f (u u_x + v u_y) = -p_x + %.5f (u_{xx} + u_{yy})' % (lambda_1_value, lambda_2_value)
         # s = s + r' \\'
         # s = s + r' v_t + %.3f (u v_x + v v_y) = -p_y + %.5f (v_{xx} + v_{yy})' % (lambda_1_value, lambda_2_value)
@@ -931,12 +914,12 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
 
 
 if __name__ == "__main__":
-    sim_dir_and_parameter_tuple = (r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity_t6.0/tube10mm_diameter_pt05mesh', 6.0)
+    sim_dir_and_parameter_tuple = (r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0/tube_bezier_1pt0mesh', 0.0)
     additional_nametag = 'working_500TrainingDatapoints'
     num_training_iterations = 100000
     max_optimizer_iterations = 50000  # 50000
     use_pressure_node_in_training = True
-    vtu_data_file_name = 'tube10mm_diameter_pt05mesh'
+    vtu_data_file_name = 'tube_bezier_1pt0mesh'
     savefile_tag = 4
     number_of_hidden_layers = 4
 
@@ -956,4 +939,4 @@ if __name__ == "__main__":
 
     run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, num_training_iterations,
         use_pressure_node_in_training, number_of_hidden_layers, max_optimizer_iterations,
-        N_train_in, load_existing_model=True, additional_simulation_data=[sim_dir_and_parameter_tuple])
+        N_train_in, load_existing_model=False, additional_simulation_data=[sim_dir_and_parameter_tuple])
