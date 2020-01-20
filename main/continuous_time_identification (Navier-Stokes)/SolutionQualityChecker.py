@@ -24,10 +24,10 @@ class style():
     UNDERLINE = lambda x: '\033[4m' + str(x)
     RESET = lambda x: '\033[0m' + str(x)
 
-def read_mesh_file(mesh_filename, cached_data_dir):
+def get_mesh_embedded_in_regular_grid(mesh_filename, cached_data_dir, t_parameter):
     # data_file = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/tube10mm_diameter_pt05mesh.vtu'
     # data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
-    data_reader = VtkDataReader.VtkDataReader(mesh_filename, 1.0, cached_data_dir)
+    data_reader = VtkDataReader.VtkDataReader(mesh_filename, t_parameter, cached_data_dir)
     data = data_reader.get_data_by_mode(VtkDataReader.VtkDataReader.MODE_STRUCTURED)
     X_star = data['X_star']  # N x 2
     t_star = data['t']  # T x 1
@@ -40,6 +40,26 @@ def read_mesh_file(mesh_filename, cached_data_dir):
     t_star = TT[:, snap]
 
     return X_star, t_star
+
+
+def plot_on_regular_grid(plot_id, data_file, data_directory, t_parameter, model, figure_path):
+    X_star, t_star = get_mesh_embedded_in_regular_grid(data_file, data_directory, t_parameter)
+
+    x_star = X_star[:, 0:1]
+    y_star = X_star[:, 1:2]
+
+    t_star = t_star * 0 + t_parameter
+    u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
+
+    plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
+    NavierStokes.plot_solution(X_star, u_pred, plot_id, plot_title, relative_or_absolute_folder_path=figure_path)
+    plot_id += 1
+
+    plot_title = "Predicted Pressure Parameter {} max observed {}".format(t_parameter, np.max(p_pred))
+    NavierStokes.plot_solution(X_star, p_pred, plot_id, plot_title, relative_or_absolute_folder_path=figure_path)
+    plot_id += 1
+
+    return plot_id
 
 def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_linspace, plot_id,
                data_directory, vtu_file_name_template,  plot_figures=False, figure_path='./figures_output/'):
@@ -58,31 +78,30 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_lins
         gathered_boundary_losses = dict()
         for t_parameter in tqdm.tqdm(t_parameter_linspace, desc='[Computing loss over param space]'):
             data_file = vtu_file_name_template.format(t_parameter)
-            X_star, t_star = read_mesh_file(data_file, data_directory)
+            data_reader = VtkDataReader.VtkDataReader(data_file, t_parameter, data_directory)
+            data = data_reader.get_data_by_mode(VtkDataReader.VtkDataReader.MODE_UNSTRUCTURED)
 
+            X_star = data['X_star']  # N x 2
             x_star = X_star[:, 0:1]
             y_star = X_star[:, 1:2]
 
-            t_star = t_star * 0 + t_parameter
-            u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star)
+            N = X_star.shape[0]
+            t_star = np.tile(data['t'], (1, N)).T  # converts the t data from shape 1 x 1 to shape N x 1
 
-            navier_stokes_loss, boundary_condition_loss = model.get_loss(x_star, y_star, t_star)
+            boundary_condition_codes = data['bc_codes']
+
+            navier_stokes_loss, boundary_condition_loss = model.get_loss(x_star,
+                                                                         y_star,
+                                                                         t_star,
+                                                                         boundary_condition_codes)
 
             gathered_losses[t_parameter] = navier_stokes_loss
             gathered_boundary_losses[t_parameter] = boundary_condition_loss
 
             if plot_figures:
-                plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
-                NavierStokes.plot_solution(X_star, u_pred, plot_id, plot_title, relative_or_absolute_folder_path=figure_path)
-                plot_id += 1
+                plot_id = plot_on_regular_grid(plot_id, data_file, data_directory, t_parameter, model, figure_path)
+                # TODO could call my non-regular grid plotting tool here to do it on the unstructured grid
 
-                plot_title = "Predicted Pressure Parameter {} max observed {}".format(t_parameter, np.max(p_pred))
-                NavierStokes.plot_solution(X_star, p_pred, plot_id, plot_title, relative_or_absolute_folder_path=figure_path)
-                plot_id += 1
-
-        np.savetxt('tempu2.txt', model.get_solution(x_star, y_star, t_star * 0 + 2.5))
-        np.savetxt('x.txt', x_star)
-        np.savetxt('y.txt', y_star)
 
     return gathered_losses, gathered_boundary_losses, plot_id
 

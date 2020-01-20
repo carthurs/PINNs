@@ -30,6 +30,7 @@ import TensorboardTools
 import sys
 import warnings
 import VtkDataReader
+import BoundaryConditionCodes as BC
 
 # np.random.seed(1234)
 # tf.set_random_seed(1234)
@@ -51,7 +52,6 @@ def array_extending_insert(array, index, value):
     return array
 
 class PhysicsInformedNN:
-
     def __getstate__(self):
         odict = self.__dict__.copy()
         variables_to_remove = ['sess', 'optimizer_Adam', 'train_op_Adam', 'weights', 'biases', 'lambda_1',
@@ -76,9 +76,9 @@ class PhysicsInformedNN:
         # self.p_reference_point = None
         self.p_at_first_node = 3.141592
 
-        self.finalise_state_setup()
+        self._finalise_state_setup()
 
-    def finalise_state_setup(self):
+    def _finalise_state_setup(self):
         # Initialize NN
         self.weights, self.biases = self.initialize_NN(self.layers)
 
@@ -100,23 +100,34 @@ class PhysicsInformedNN:
         # self.sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
         # These placeholders all have shape [None, 1], as self.x.shape[1] = 1.
-        self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]])
-        self.y_tf = tf.placeholder(tf.float32, shape=[None, self.y.shape[1]])
-        self.t_tf = tf.placeholder(tf.float32, shape=[None, self.t.shape[1]])
+        self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]], name='x_placeholder')
+        self.y_tf = tf.placeholder(tf.float32, shape=[None, self.y.shape[1]], name='y_placeholder')
+        self.t_tf = tf.placeholder(tf.float32, shape=[None, self.t.shape[1]], name='t_placeholder')
 
-        self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]])
-        self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
+        self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]], name='u_placeholder')
+        self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]], name='v_placeholder')
+
+        self.bc_codes_tf = tf.placeholder(tf.int32, shape=[None], name='bc_codes_placeholder')
 
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node, self.loss_pieces_out =\
                                                                             self.net_NS(self.x_tf, self.y_tf, self.t_tf)
 
         inflow_condition = lambda y: (10.0-y)*y/25.0 * self.t_tf
-        zero = self.u_pred * 0.0  # get zeros of the correct shape. I'm sure there's a more sane way of doing this...
+        zeros = self.u_pred * 0.0  # stupid, I know, but I can't work out how to get the right shape otherwise
+        # self.loss_boundary_conditions = tf.reduce_sum(zero)
+
+        self.loss_boundary_conditions = tf.reduce_sum(tf.square(
+                                            tf.where(self.bc_codes_tf == BC.Codes.INFLOW,
+                                                           self.u_pred - inflow_condition(self.y_tf), zeros)
+                                        )) + \
+                                         tf.reduce_sum(tf.square(
+                                             tf.where(self.bc_codes_tf == BC.Codes.NOSLIP,
+                                                      self.u_pred + self.v_pred, zeros)))
+
         # lines are:
         # 1) inflow condition satisfaction on u
         # 2) lower boundary noslip satisfaction
         # 3) upper boundary noslip satisfaction
-        self.loss_boundary_conditions = tf.reduce_sum(zero)
         # self.loss_boundary_conditions = tf.reduce_sum(
         #     tf.square(tf.where(tf.math.less(self.x_tf, 0.0001), self.u_pred - inflow_condition(self.y_tf), zero))) + \
         #                                 tf.reduce_sum(tf.square(
@@ -128,8 +139,8 @@ class PhysicsInformedNN:
 
         navier_stokes_loss_scaling = 100
         if self.p_reference_point is not None:
-            self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zero, self.u_tf - self.u_pred))) + \
-                                 tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zero, self.v_tf - self.v_pred)))
+            self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zeros, self.u_tf - self.u_pred))) + \
+                                 tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zeros, self.v_tf - self.v_pred)))
             self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
                                       tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
             self.loss_pressure_node = tf.square(self.p_at_first_node[0] - self.p_reference_point[3])
@@ -184,7 +195,7 @@ class PhysicsInformedNN:
     def set_max_optimizer_iterations(self, max_iterations_in):
         self.max_optimizer_iterations = max_iterations_in
 
-    def reset_training_data(self, x, y, t, u, v):
+    def reset_training_data(self, x, y, t, u, v, bc_codes):
         X = np.concatenate([x, y, t], 1)
 
         self.lb = X.min(0)
@@ -206,14 +217,16 @@ class PhysicsInformedNN:
         self.u = u
         self.v = v
 
+        self.bc_codes = bc_codes
+
 
     # Initialize the class
-    def __init__(self, x, y, t, u, v, layers, p_reference_point, discover_navier_stokes_parameters,
+    def __init__(self, x, y, t, u, v, bc_codes, layers, p_reference_point, discover_navier_stokes_parameters,
                  true_viscosity_in, true_density_in, max_optimizer_iterations_in):
         self.p_at_first_node = 0.0
         self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
 
-        self.reset_training_data(x, y, t, u, v)
+        self.reset_training_data(x, y, t, u, v, bc_codes)
 
         self.p_reference_point = p_reference_point
 
@@ -225,7 +238,7 @@ class PhysicsInformedNN:
         self.true_density = true_density_in
 
         self.max_optimizer_iterations = max_optimizer_iterations_in
-        self.finalise_state_setup()
+        self._finalise_state_setup()
 
     def initialize_NN(self, layers):
         weights = []
@@ -326,7 +339,7 @@ class PhysicsInformedNN:
     def train(self, nIter, summary_writer, x_predict, y_predict, t_predict):
 
         tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
-                   self.u_tf: self.u, self.v_tf: self.v}
+                   self.u_tf: self.u, self.v_tf: self.v, self.bc_codes_tf: self.bc_codes}
 
         self.loss_history = np.zeros(self.max_optimizer_iterations + 1)  # 1 extra as a marker of where it switches between the optimizers
         self.loss_history_write_index = 0
@@ -384,7 +397,7 @@ class PhysicsInformedNN:
 
     def call_just_LBGDSF_optimizer(self):
         tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
-                   self.u_tf: self.u, self.v_tf: self.v}
+                   self.u_tf: self.u, self.v_tf: self.v, self.bc_codes_tf: self.bc_codes}
 
         self._get_optimizer().minimize(self.sess,
                                        feed_dict=tf_dict,
@@ -405,10 +418,12 @@ class PhysicsInformedNN:
     def getLossHistory(self):
         return self.loss_history
 
-    def get_loss(self, x_star, y_star, t_star):
-        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
+    def get_loss(self, x_star, y_star, t_star, boundary_condition_codes):
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.bc_codes_tf: boundary_condition_codes}
+
         navier_stokes_loss = self.sess.run(self.loss_navier_stokes, tf_dict)
         boundary_condition_loss = self.sess.run(self.loss_boundary_conditions, tf_dict)
+
         return navier_stokes_loss, boundary_condition_loss
 
     def get_solution(self, x_star, y_star, t_star):
@@ -597,6 +612,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         u = training_data['u']
         v = training_data['v']
         p = training_data['p']
+        bc_codes = training_data['bc_codes']
 
         ######################################################################
         ######################## Noiseles Data ###############################
@@ -608,6 +624,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         t_train = t[idx, :]
         u_train = u[idx, :]
         v_train = v[idx, :]
+        bc_codes_train = bc_codes[idx]
 
         # Test Data
         test_data_parameter_t = t_train[0, 0]  # TODO make this actually test on a slice of our choosing, rather than on a fuller slice of the training data. This is ok, but we can do better.
@@ -620,6 +637,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         u_test = test_data['u']
         v_test = test_data['v']
         p_test = test_data['p']
+        bc_codes_test = test_data['bc_codes']
 
         if use_pressure_node_in_training:
             # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
@@ -645,13 +663,14 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
 
             # model.call_just_LBGDSF_optimizer()
             if train_model_further_with_new_data:
-                model.reset_training_data(x_train, y_train, t_train, u_train, v_train)
+                model.reset_training_data(x_train, y_train, t_train, u_train, v_train, bc_codes_train)
 
                 train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
                                        t_test, pickled_model_filename_out, saved_tf_model_filename_out)
         else:
             # Training
-            model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers, p_single_reference_node,
+            model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, bc_codes_train, layers,
+                                      p_single_reference_node,
                                       discover_navier_stokes_parameters, true_viscosity_value, true_density_value,
                                       max_optimizer_iterations_in)
 

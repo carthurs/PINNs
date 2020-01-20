@@ -2,5 +2,8 @@
   "navier_stokes_solver_path": "/home/chris/workspace/nektapp/nektar++/build/dist/bin/IncNavierStokesSolver",
   "nektar_field_convert_path": "/home/chris/workspace/nektapp/nektar++/build/dist/bin/FieldConvert",
   "nektar_mesh_gen_path": "/home/chris/workspace/nektapp/nektar++/build/dist/bin/NekMesh",
-  "num_cpu_cores": "6"
+  "num_cpu_cores": "6",
+  "composite_ids_for_noslip": ["-1", "-2"],
+  "composite_ids_for_inflow": ["-3"],
+  "composite_ids_for_outflow": ["-4"]
 }

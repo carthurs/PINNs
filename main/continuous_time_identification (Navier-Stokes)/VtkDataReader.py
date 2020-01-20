@@ -7,6 +7,9 @@ import hashlib
 import pickle
 import os
 import plotly.graph_objects as go
+import NektarXmlHandler
+import ConfigManager
+import BoundaryConditionCodes as BC
 
 def md5hash_file(filename):
     hasher = hashlib.md5()
@@ -24,6 +27,8 @@ class VtkDataReader(object):
 
     def __init__(self, full_filename, time_value_in, data_cache_path):
         self.time_value = np.expand_dims(np.array([time_value_in]), axis=1)
+
+        self.filename_without_extension, ignored_extension = os.path.splitext(full_filename)
 
         file_md5hash = md5hash_file(full_filename)
         cached_output_filename = "{}.v{}.pickle".format(file_md5hash, VtkDataReader.output_data_version)
@@ -84,6 +89,33 @@ class VtkDataReader(object):
     def has_simulation_output_data(self):
         return (self.get_read_data_as_numpy_array('u') is not None)
 
+    def _get_bc_codes(self, num_nodes_in_whole_mesh):
+        config_manager = ConfigManager.ConfigManager()
+
+        with open(self.filename_without_extension + '.xml', 'rb') as xml_infile:
+            xml_reader = NektarXmlHandler.NektarXmlHandler(xml_infile)
+        bc_codes = np.zeros((num_nodes_in_whole_mesh,), dtype=np.int32)
+
+        # set the noslip codes:
+        noslip_composite_ids = config_manager.get_composite_ids_noslip()
+        noslip_node_ids = xml_reader.get_nodes_in_composite(noslip_composite_ids)
+        for node in noslip_node_ids:
+            bc_codes[node] = BC.Codes.NOSLIP
+
+        # Set the inflow codes:
+        inflow_composite_ids = config_manager.get_composite_ids_inflow()
+        inflow_node_ids = xml_reader.get_nodes_in_composite(inflow_composite_ids)
+        for node in inflow_node_ids:
+            bc_codes[node] = BC.Codes.INFLOW
+
+        # Set the outflow codes:
+        outflow_composite_ids = config_manager.get_composite_ids_outflow()
+        outflow_node_ids = xml_reader.get_nodes_in_composite(outflow_composite_ids)
+        for node in outflow_node_ids:
+            bc_codes[node] = BC.Codes.OUTFLOW
+
+        return bc_codes
+
     def get_unstructured_mesh_format_input_data(self):
         return_data = dict()
         return_data['X_star'] = self._get_coordinate_data()
@@ -99,6 +131,9 @@ class VtkDataReader(object):
             velocity_vector_data = np.column_stack((raw_velocity_data_x_component, raw_velocity_data_y_component))
             velocity_data = np.expand_dims(velocity_vector_data, axis=2)  # because the NS code expects a time axis too
             return_data['U_star'] = velocity_data
+
+        num_nodes_in_mesh = return_data['X_star'].shape[0]
+        return_data['bc_codes'] = self._get_bc_codes(num_nodes_in_mesh)
 
         return return_data
 
@@ -164,6 +199,7 @@ class VtkDataReader(object):
 
         return return_data
 
+    # TODO refactor this into its own class for plotting...
     def plotly_plot_mesh(self):
         raw_coordinates_data = self.get_point_coordinates()
         x_coords = raw_coordinates_data[:, 0]
@@ -257,6 +293,8 @@ class MultipleFileReader(object):
         PP = P_star  # num_parameter_slices x T
         data_for_this_file_streaming_format['p'] = PP.flatten()[:,None]  # num_parameter_slices*T x 1
 
+        data_for_this_file_streaming_format['bc_codes'] = data_for_this_file['bc_codes']
+
         if self.gathered_data is None:
             self.gathered_data = data_for_this_file_streaming_format
         else:
@@ -310,6 +348,9 @@ class MultipleFileReader(object):
         test_data['v'] = U_star[:, 1]
 
         test_data['p'] = raw_data_for_test['p_star']
+
+        test_data['bc_codes'] = raw_data_for_test['bc_codes']
+
         return test_data
 
 

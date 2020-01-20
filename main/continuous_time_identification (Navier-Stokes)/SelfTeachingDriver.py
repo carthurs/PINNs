@@ -50,7 +50,7 @@ if __name__ == '__main__':
     parameter_range_end = 6.0
     number_of_parameter_points = int((parameter_range_end - parameter_range_start)*10) + 1
 
-    starting_index = 5
+    starting_index = 0
     ending_index = 100
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
@@ -78,6 +78,16 @@ if __name__ == '__main__':
         logger.warning("Previous simualtion iterations not found. Starting from scratch at iteration {}".format(
                                                                                                         starting_index))
 
+    t_parameter_linspace = np.linspace(parameter_range_start, parameter_range_end, num=number_of_parameter_points)
+    nektar_driver = NektarDriver.NektarDriver(nektar_data_root_path, reference_data_subfolder,
+                                              simulation_subfolder_template,
+                                              vtu_and_xml_file_basename,
+                                              logger)
+    # Ensure that there are meshes for all the t-parameters we're about to query for:
+    for t_value in t_parameter_linspace:
+        logger.info("Creating mesh for evaluating the predicted solution when parameter={}".format(t_value))
+        nektar_driver.generate_vtu_mesh_for_parameter(t_value)
+
     for new_data_iteration in range(starting_index, ending_index):
         logger.info('Starting iteration {}'.format(new_data_iteration))
         input_data_save_file_tag = new_data_iteration
@@ -86,7 +96,6 @@ if __name__ == '__main__':
         saved_tf_model_filename = os.path.join(master_model_data_root_path, 'saved_model_{}.tf')
         pickled_model_filename = os.path.join(master_model_data_root_path, 'saved_model_{}.pickle')
 
-        t_parameter_linspace = np.linspace(parameter_range_start, parameter_range_end, num=number_of_parameter_points)
         plot_id = 10
         if new_data_iteration == 0:
             # If this is the first iteration, no data is available yet, so we just work with the parameter at the
@@ -137,12 +146,11 @@ if __name__ == '__main__':
 
         nektar_driver = NektarDriver.NektarDriver(nektar_data_root_path, reference_data_subfolder,
                                                   simulation_subfolder_template,
-                                                  t_parameter,
                                                   vtu_and_xml_file_basename,
                                                   logger)
-        nektar_driver.run_simulation()
+        nektar_driver.run_simulation(t_parameter)
 
-        sim_dir_and_parameter_tuples.append(nektar_driver.get_vtu_file_without_extension_and_parameter())
+        sim_dir_and_parameter_tuples.append((nektar_driver.get_vtu_file_without_extension(t_parameter), t_parameter))
 
         picklefile_name = sim_dir_and_parameter_tuples_picklefile_basename.format(input_data_save_file_tag+1)
         with open(picklefile_name, 'wb') as outfile:
@@ -160,11 +168,6 @@ if __name__ == '__main__':
         plot_all_figures = True
         saved_tf_model_filename_post = saved_tf_model_filename.format(input_data_save_file_tag+1)
         pickled_model_filename_post = pickled_model_filename.format(input_data_save_file_tag+1)
-
-        # Ensure that there are meshes for all the t-parameters we're about to query for:
-        for t_value in t_parameter_linspace:
-            logger.info("Creating mesh for evaluating the predicted solution when parameter={}".format(t_value))
-            nektar_driver.generate_vtu_mesh_for_parameter(t_value)
 
         SolutionQualityChecker.compute_and_plot_losses(plot_all_figures, pickled_model_filename_post,
                                                        saved_tf_model_filename_post, t_parameter_linspace,
