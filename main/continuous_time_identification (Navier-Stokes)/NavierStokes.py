@@ -114,14 +114,14 @@ class PhysicsInformedNN:
 
         inflow_condition = lambda y: (10.0-y)*y/25.0 * self.t_tf
         zeros = self.u_pred * 0.0  # stupid, I know, but I can't work out how to get the right shape otherwise
-        # self.loss_boundary_conditions = tf.reduce_sum(zero)
+        # self.loss_boundary_conditions = tf.reduce_sum(zeros)
 
         self.loss_boundary_conditions = tf.reduce_sum(tf.square(
-                                            tf.where(tf.map_fn(lambda x: tf.abs(x - BC.Codes.INFLOW) < 0.0001, self.bc_codes_tf, dtype=tf.bool),
+                                            tf.where(tf.less(tf.abs(self.bc_codes_tf - BC.Codes.INFLOW), 0.0001),
                                                            self.u_pred - inflow_condition(self.y_tf), zeros)
                                         )) + \
                                          tf.reduce_sum(
-                                             tf.where(tf.map_fn(lambda x: tf.abs(x - BC.Codes.NOSLIP) < 0.0001, self.bc_codes_tf, dtype=tf.bool),
+                                             tf.where(tf.less(tf.abs(self.bc_codes_tf - BC.Codes.NOSLIP), 0.0001),
                                                       tf.square(self.u_pred) + tf.square(self.v_pred), zeros))
         # lines are:
         # 1) inflow condition satisfaction on u
