@@ -59,7 +59,7 @@ class PhysicsInformedNN:
                                'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node', 'loss_summary', 'psi_pred',
                                'loss_velocity_summary', 'loss_ns_summary', 'loss_navier_stokes', 'loss_velocity',
                                'loss_pressure_node', 'other_summary_scalars', 'loss_pieces_out',
-                               'loss_boundary_conditions', 'max_optimizer_iterations']
+                               'loss_boundary_conditions', 'max_optimizer_iterations', 'bc_codes_tf']
 
         for variable_to_remove in variables_to_remove:
             try:
@@ -107,7 +107,7 @@ class PhysicsInformedNN:
         self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]], name='u_placeholder')
         self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]], name='v_placeholder')
 
-        self.bc_codes_tf = tf.placeholder(tf.int32, shape=[None], name='bc_codes_placeholder')
+        self.bc_codes_tf = tf.placeholder(tf.float32, shape=[None], name='bc_codes_placeholder')
 
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node, self.loss_pieces_out =\
                                                                             self.net_NS(self.x_tf, self.y_tf, self.t_tf)
@@ -117,13 +117,12 @@ class PhysicsInformedNN:
         # self.loss_boundary_conditions = tf.reduce_sum(zero)
 
         self.loss_boundary_conditions = tf.reduce_sum(tf.square(
-                                            tf.where(self.bc_codes_tf == BC.Codes.INFLOW,
+                                            tf.where(tf.map_fn(lambda x: tf.abs(x - BC.Codes.INFLOW) < 0.0001, self.bc_codes_tf, dtype=tf.bool),
                                                            self.u_pred - inflow_condition(self.y_tf), zeros)
                                         )) + \
-                                         tf.reduce_sum(tf.square(
-                                             tf.where(self.bc_codes_tf == BC.Codes.NOSLIP,
-                                                      self.u_pred + self.v_pred, zeros)))
-
+                                         tf.reduce_sum(
+                                             tf.where(tf.map_fn(lambda x: tf.abs(x - BC.Codes.NOSLIP) < 0.0001, self.bc_codes_tf, dtype=tf.bool),
+                                                      tf.square(self.u_pred) + tf.square(self.v_pred), zeros))
         # lines are:
         # 1) inflow condition satisfaction on u
         # 2) lower boundary noslip satisfaction
@@ -152,13 +151,14 @@ class PhysicsInformedNN:
             #     # Navier-Stokes loss only here, as the -1s indicate we have no data here
             #     self.loss = self.loss_navier_stokes + loss_t_gradient
             # else:
-            self.loss = self.loss_velocity + self.loss_navier_stokes + self.loss_pressure_node  #+ loss_t_gradient
+            self.loss = self.loss_velocity + self.loss_navier_stokes + \
+                        self.loss_pressure_node + self.loss_boundary_conditions
         else:
             self.loss_velocity = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
                                  tf.reduce_sum(tf.square(self.v_tf - self.v_pred))
             self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
                                       tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
-            self.loss = self.loss_velocity + self.loss_navier_stokes
+            self.loss = self.loss_velocity + self.loss_navier_stokes + self.loss_boundary_conditions
 
         self.loss_summary = tf.summary.scalar("loss", self.loss)
         self.loss_velocity_summary = tf.summary.scalar("loss_velocity", self.loss_velocity)
@@ -423,6 +423,7 @@ class PhysicsInformedNN:
 
         navier_stokes_loss = self.sess.run(self.loss_navier_stokes, tf_dict)
         boundary_condition_loss = self.sess.run(self.loss_boundary_conditions, tf_dict)
+        print('boundary_condition_loss', boundary_condition_loss)
 
         return navier_stokes_loss, boundary_condition_loss
 
@@ -431,9 +432,9 @@ class PhysicsInformedNN:
         return self.sess.run(self.u_pred, tf_dict)
 
 
-def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, savefile_nametag=None, second_y_data=None,
+def plot_graph(x_data, y_data, title, scatter_x=None, scatter_y=None, savefile_nametag=None, second_y_data=None,
                y_range_1=(None, None), y_range_2=(None, None), y_range_3=(None, None), relative_or_absolute_output_folder=None):
-    plt.figure(index)
+    plt.figure(88)
     if second_y_data is not None:
         number_of_columns = 3
     else:
@@ -480,7 +481,7 @@ def plot_graph(x_data, y_data, index, title, scatter_x=None, scatter_y=None, sav
     plt.close()
 
 
-def plot_solution(X_star, u_star, index, title, colour_range=(None, None), relative_or_absolute_folder_path=None):
+def plot_solution(X_star, u_star, title, colour_range=(None, None), relative_or_absolute_folder_path=None):
     lb = X_star.min(0)
     ub = X_star.max(0)
     nn = 200
@@ -490,7 +491,7 @@ def plot_solution(X_star, u_star, index, title, colour_range=(None, None), relat
 
     U_star = griddata(X_star, u_star.flatten(), (X, Y), method='cubic')
 
-    plt.figure(index)
+    plt.figure(99)
     plt.pcolor(X, Y, U_star, cmap='jet', vmin=colour_range[0], vmax=colour_range[1])
     plt.colorbar()
     plt.title(title)
@@ -679,17 +680,14 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
 
         # Prediction
         if plot_lots:
-            plot_id = 10
             for t_parameter in [1, 1.5, 2, 2.5, 3, 4, 3.5, 4.5, 2.2, 1.1, 0.5, -0.5, 5.0, 0.0]:
                 t_test = t_test * 0 + t_parameter
                 u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test)
                 plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
-                plot_solution(X_star, u_pred, plot_id, plot_title)
-                plot_id += 1
+                plot_solution(X_star, u_pred, plot_title)
 
                 plot_title = "Predicted Pressure Parameter {} max observed {}".format(t_parameter, np.max(p_pred))
-                plot_solution(X_star, p_pred, plot_id, plot_title)
-                plot_id += 1
+                plot_solution(X_star, p_pred, plot_title)
 
         t_test = t_test * 0 + 1.0
         u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test)
@@ -713,12 +711,12 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         print(lambda_1_value, lambda_2_value)
 
         # Plot Results
-        plot_solution(X_star, u_pred, 1, "Predicted Velocity U")
-        plot_solution(X_star, v_pred, 2, "Predicted Velocity V")
-        plot_solution(X_star, p_pred, 3, "Predicted Pressure")
-        plot_solution(X_star, p_test, 4, "True Pressure")
-        plot_solution(X_star, p_test[:, 0] - p_pred, 5, "Pressure Error")
-        plot_solution(X_star, psi_pred, 6, "Psi")
+        plot_solution(X_star, u_pred, "Predicted Velocity U")
+        plot_solution(X_star, v_pred, "Predicted Velocity V")
+        plot_solution(X_star, p_pred, "Predicted Pressure")
+        plot_solution(X_star, p_test, "True Pressure")
+        plot_solution(X_star, p_test[:, 0] - p_pred, "Pressure Error")
+        plot_solution(X_star, psi_pred, "Psi")
 
         np.savetxt('loss_history_{}_{}.dat'.format(number_of_training_iterations, model.get_max_optimizer_iterations()), model.getLossHistory())
 

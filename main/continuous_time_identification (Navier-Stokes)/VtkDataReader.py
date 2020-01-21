@@ -94,7 +94,7 @@ class VtkDataReader(object):
 
         with open(self.filename_without_extension + '.xml', 'rb') as xml_infile:
             xml_reader = NektarXmlHandler.NektarXmlHandler(xml_infile)
-        bc_codes = np.zeros((num_nodes_in_whole_mesh,), dtype=np.int32)
+        bc_codes = np.zeros((num_nodes_in_whole_mesh,), dtype=np.float32)
 
         # set the noslip codes:
         noslip_composite_ids = config_manager.get_composite_ids_noslip()

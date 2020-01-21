@@ -58,7 +58,6 @@ class NektarXmlHandler(object):
         node_pairs_in_edges_in_composites = []
         for composite_id in iterify(composite_ids):
             edges_in_composite = self.find_composite_by_id(composite_id)
-            print(composite_id, edges_in_composite)
             node_pairs_in_edges_in_composite = [self.get_nodes_of_edge(edge_id) for edge_id in edges_in_composite]
             node_pairs_in_edges_in_composites.extend(node_pairs_in_edges_in_composite)
 

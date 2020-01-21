@@ -46,10 +46,6 @@ if __name__ == '__main__':
     use_pressure_node_in_training = True
     number_of_hidden_layers = 8
 
-    parameter_range_start = 0.0
-    parameter_range_end = 6.0
-    number_of_parameter_points = int((parameter_range_end - parameter_range_start)*10) + 1
-
     starting_index = 0
     ending_index = 100
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
@@ -60,13 +56,18 @@ if __name__ == '__main__':
     if not test_mode:
         num_training_iterations = 20000
         max_optimizer_iterations = 50000
+        parameter_range_start = 0.0
+        parameter_range_end = 6.0
     else:
         num_training_iterations = 20
         max_optimizer_iterations = 50
+        parameter_range_start = 0.0
+        parameter_range_end = 0.4
+
+    number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 10) + 1
 
     try:
         sim_dir_and_parameter_tuples_picklefile = sim_dir_and_parameter_tuples_picklefile_basename.format(starting_index)
-
         with open(sim_dir_and_parameter_tuples_picklefile, 'rb') as infile:
             sim_dir_and_parameter_tuples = pickle.load(infile)
         additional_t_parameters_NS_simulations_run_at = [pair[1] for pair in sim_dir_and_parameter_tuples]
@@ -96,7 +97,6 @@ if __name__ == '__main__':
         saved_tf_model_filename = os.path.join(master_model_data_root_path, 'saved_model_{}.tf')
         pickled_model_filename = os.path.join(master_model_data_root_path, 'saved_model_{}.pickle')
 
-        plot_id = 10
         if new_data_iteration == 0:
             # If this is the first iteration, no data is available yet, so we just work with the parameter at the
             # midpoint of the parameter range of interest.
@@ -107,37 +107,25 @@ if __name__ == '__main__':
             logger.info('Will load tensorflow file {}'.format(saved_tf_model_filename.format(input_data_save_file_tag)))
             logger.info('Will load pickle file {}'.format(pickled_model_filename.format(input_data_save_file_tag)))
 
-            t_parameter, plot_id = SolutionQualityChecker.get_parameter_of_worst_loss(
+            loss_landscape = SolutionQualityChecker.LossLandscape(
                 pickled_model_filename.format(input_data_save_file_tag),
                 saved_tf_model_filename.format(input_data_save_file_tag),
-                t_parameter_linspace, plot_id, master_model_data_root_path,
-                reference_vtu_filename_template)
-
-            logger.info('Worst loss was at t={}'.format(t_parameter))
+                t_parameter_linspace, master_model_data_root_path,
+                reference_vtu_filename_template, num_parameters_per_point=1)
 
             # Ensure that we're not repeating a previously-done simulation, by cutting a hole in the permitted
             # parameter space around the suggested t_parameter, if we already have training data for that parameter.
-            exclusion_neighbourhood = np.pi/10  # just something irrational so we don't bump into other values
-            t_parameter_linspace_reduced = t_parameter_linspace
-            while_loop_counter = 0
-            while t_parameter in additional_t_parameters_NS_simulations_run_at:
-                t_parameter_linspace_reduced_cached = t_parameter_linspace_reduced
-
-                t_parameter_linspace_reduced = [v for v in t_parameter_linspace_reduced_cached
-                                                if abs(v-t_parameter) > exclusion_neighbourhood]
-
-                if len(t_parameter_linspace_reduced) == 0:
-                    logger.info("Could not find another parameter value to simulate at. Parameter space is saturated;\
-                                 no further simulations possible with an exclusion_neighbourhood of size {}."
-                                .format(while_loop_counter, exclusion_neighbourhood))
-                    sys.exit(0)
-
-                t_parameter, plot_id = SolutionQualityChecker.get_parameter_of_worst_loss(
-                    pickled_model_filename.format(input_data_save_file_tag),
-                    saved_tf_model_filename.format(input_data_save_file_tag),
-                    t_parameter_linspace_reduced, plot_id, master_model_data_root_path,
-                    reference_vtu_filename_template)
-                while_loop_counter += 1
+            exclusion_radius = np.pi / 10  # just something irrational so we don't bump into other values
+            try:
+                t_parameter = loss_landscape.get_parameters_of_worst_loss_excluding_those_near_existing_simulations(additional_t_parameters_NS_simulations_run_at,
+                                                                                                                    exclusion_radius)[0]
+                additional_t_parameters_NS_simulations_run_at.append(t_parameter)
+            except SolutionQualityChecker.LossLandscape.NoAvailableParameters:
+                logger.info("Could not find another parameter value to simulate at. Parameter space is saturated;\
+                                                 no further simulations possible with an exclusion_neighbourhood \
+                                                 of size {}."
+                            .format(exclusion_radius))
+                sys.exit(0)
 
             start_from_existing_model = True
 
@@ -171,7 +159,7 @@ if __name__ == '__main__':
 
         SolutionQualityChecker.compute_and_plot_losses(plot_all_figures, pickled_model_filename_post,
                                                        saved_tf_model_filename_post, t_parameter_linspace,
-                                                       plot_id, master_model_data_root_path,
+                                                       master_model_data_root_path,
                                                        reference_vtu_filename_template,
                                                        additional_real_simulation_data_parameters=additional_t_parameters_NS_simulations_run_at,
                                                        plot_filename_tag=str(new_data_iteration))
