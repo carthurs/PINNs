@@ -1,3 +1,4 @@
+import shutil
 import vtk
 from vtk.util import numpy_support
 import numpy as np
@@ -11,12 +12,58 @@ import NektarXmlHandler
 import ConfigManager
 import BoundaryConditionCodes as BC
 
+
 def md5hash_file(filename):
     hasher = hashlib.md5()
     with open(filename, 'rb') as file:
         for chunk in iter(lambda: file.read(4096), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def interpolate_vtu_onto_xml_defined_grid(vtu_data_to_be_interpolated_file_name,
+                                          xml_of_nodes_to_interpolate_onto_file_name,
+                                          output_vtu_file_name):
+    vtu_reader = vtk.vtkXMLUnstructuredGridReader()
+    vtu_reader.SetFileName(vtu_data_to_be_interpolated_file_name)
+    vtu_reader.Update()
+    input_vtu_data = vtu_reader.GetOutput()
+
+    xml_reader = NektarXmlHandler.NektarXmlHandler(xml_of_nodes_to_interpolate_onto_file_name)
+
+    vtk_output_mesh_points = vtk.vtkPoints()
+    for node_coords in xml_reader.get_node_coordinate_iterator():
+        vtk_output_mesh_points.InsertNextPoint(node_coords)
+
+    probe_filter = vtk.vtkProbeFilter()
+    probe_filter.SetSourceData(input_vtu_data)
+
+    vtk_output_mesh_points_polydata = vtk.vtkPolyData()
+    vtk_output_mesh_points_polydata.SetPoints(vtk_output_mesh_points)
+
+    delaunay = vtk.vtkDelaunay2D()
+    delaunay.SetInputData(vtk_output_mesh_points_polydata)
+    delaunay.BoundingTriangulationOff()
+    delaunay.Update()
+
+    probe_filter.SetInputConnection(delaunay.GetOutputPort())
+    probe_filter.Update()
+
+    output_poly_data = probe_filter.GetPolyDataOutput()
+    append_filter = vtk.vtkAppendFilter()
+    append_filter.AddInputData(output_poly_data)
+    append_filter.Update()
+
+    writer = vtk.vtkXMLUnstructuredGridWriter()
+    writer.SetFileName(output_vtu_file_name)
+    writer.SetInputData(append_filter.GetOutput())
+    writer.Write()
+
+    # Copy the xml file to have the same base name as the vtu, for convenience when understanding which
+    # pairs of files are associated
+    file_basename, _ = os.path.splitext(output_vtu_file_name)
+    shutil.copyfile(xml_of_nodes_to_interpolate_onto_file_name,
+                    file_basename + '.xml')
 
 
 class VtkDataReader(object):
@@ -28,7 +75,8 @@ class VtkDataReader(object):
     def __init__(self, full_filename, time_value_in, data_cache_path):
         self.time_value = np.expand_dims(np.array([time_value_in]), axis=1)
 
-        self.filename_without_extension, ignored_extension = os.path.splitext(full_filename)
+        filename_without_extension, ignored_extension = os.path.splitext(full_filename)
+        self.associated_xml_file_name = filename_without_extension + '.xml'
 
         file_md5hash = md5hash_file(full_filename)
         cached_output_filename = "{}.v{}.pickle".format(file_md5hash, VtkDataReader.output_data_version)
@@ -44,14 +92,6 @@ class VtkDataReader(object):
         self.unstructured_grid = reader.GetOutput()
         self.scalar_point_data = self.unstructured_grid.GetPointData()
         self.points_vtk = self.unstructured_grid.GetPoints().GetData()
-
-    @classmethod
-    def from_single_data_file(cls, filename: str):
-        return cls(filename, 1.0)
-
-    @classmethod
-    def from_single_data_file_with_time_index(cls, filename: str, time_value: float, data_cache_path):
-        return cls(filename, time_value, data_cache_path)
 
     def get_read_data_as_numpy_array(self, array_name):
         array_data = self.scalar_point_data.GetScalars(array_name)
@@ -92,7 +132,7 @@ class VtkDataReader(object):
     def _get_bc_codes(self, num_nodes_in_whole_mesh):
         config_manager = ConfigManager.ConfigManager()
 
-        with open(self.filename_without_extension + '.xml', 'rb') as xml_infile:
+        with open(self.associated_xml_file_name, 'rb') as xml_infile:
             xml_reader = NektarXmlHandler.NektarXmlHandler(xml_infile)
         bc_codes = np.zeros((num_nodes_in_whole_mesh,), dtype=np.float32)
 
@@ -207,6 +247,7 @@ class VtkDataReader(object):
         z_coords_upperplane = raw_coordinates_data[:, 2] + 2.0
 
         number_of_triangles = self.unstructured_grid.GetNumberOfCells()
+        print('number_of_triangles', number_of_triangles)
         triangle_firstnodes = [0] * number_of_triangles
         triangle_secondnodes = [0] * number_of_triangles
         triangle_thirdnodes = [0] * number_of_triangles
@@ -223,20 +264,24 @@ class VtkDataReader(object):
                                   colorscale='Picnic',
                                   colorbar_title='Pressure')
 
-
-        mydata = self.get_pinns_format_input_data()
+        mydata = self.get_unstructured_mesh_format_input_data()
 
         z_coords_lowerplane = mydata['X_star'][:, 0]*0.0 - 2.0
-        velocity_plot = go.Cone(x=mydata['X_star'][:, 0], y=mydata['X_star'][:, 1], z=z_coords_lowerplane,
-                                u=mydata['U_star'][:, 0, 0],
-                                v=mydata['U_star'][:, 1, 0],
-                                w=mydata['U_star'][:, 1, 0] * 0.0,
-                                sizeref=10.0,
-                                colorscale='RdBu',
-                                colorbar=dict(x=0.0),
-                                colorbar_title='Velocity Magnitude')
 
-        fig = go.Figure(data=[velocity_plot, pressure_plot])
+        velocity_plot = go.Mesh3d(x=x_coords, y=y_coords, z=z_coords_lowerplane,
+                                  i=triangle_firstnodes, j=triangle_secondnodes, k=triangle_thirdnodes,
+                                  intensity=mydata['U_star'][:, 0, 0],
+                                  colorscale='RdBu',
+                                  colorbar=dict(x=0.0),
+                                  colorbar_title='Velocity u (x-component)')
+
+        z_coords_midplane = mydata['X_star'][:, 0] * 0.0
+        bc_codes_plot = go.Scatter3d(x=x_coords, y=y_coords, z=z_coords_midplane,
+                                     mode='markers',
+                                     marker=dict(size=mydata['bc_codes'][:]*5, color=mydata['bc_codes'][:], colorbar=dict(x=0.9, title='boundary node types')),
+                                     )
+
+        fig = go.Figure(data=[velocity_plot, pressure_plot, bc_codes_plot])
         fig.show()
 
 
@@ -254,9 +299,9 @@ class MultipleFileReader(object):
         self.file_names_by_parameter_values = dict()
 
     def add_file_name(self, file_name, parameter_value):
-        data_for_this_file = VtkDataReader.from_single_data_file_with_time_index(file_name, parameter_value,
-                                                                                 self.cached_data_path) \
-                                                                                .get_data_by_mode(self.mode)
+        data_for_this_file = VtkDataReader(file_name, parameter_value,
+                                           self.cached_data_path
+                                          ).get_data_by_mode(self.mode)
 
         self.file_names_by_parameter_values[parameter_value] = file_name
 
@@ -328,10 +373,10 @@ class MultipleFileReader(object):
         # dictionary file_names_by_parameter_values).
         file_name = self.file_names_by_parameter_values[t_parameter_for_test]
 
-        raw_data_for_test = VtkDataReader.from_single_data_file_with_time_index(file_name,
-                                                                            t_parameter_for_test,
-                                                                            self.cached_data_path) \
-                                                                        .get_data_by_mode(self.mode)
+        raw_data_for_test = VtkDataReader(file_name,
+                                          t_parameter_for_test,
+                                          self.cached_data_path
+                                         ).get_data_by_mode(self.mode)
 
         X_star = raw_data_for_test['X_star']  # N x 2
 
@@ -357,17 +402,24 @@ class MultipleFileReader(object):
 if __name__ == '__main__':
     # Just a test / usage example - no actual functionality
     # my_reader = VtkDataReader(r'E:\dev\PINNs\PINNs\main\Data\tube_10mm_diameter_baselineInflow\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu', os.getcwd())
-    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t3.0/tube_bezier_1pt0mesh.vtu', 1.0, r'/home/chris/WorkData/nektar++/actual/bezier/master_data/')
-    print(my_reader.get_read_data_as_numpy_array('u'))
-    print(my_reader.get_point_coordinates()[:,0:2])
+    # my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.vtu', 0.5, r'/home/chris/WorkData/nektar++/actual/bezier/master_data/')
+    # print(my_reader.get_read_data_as_numpy_array('u'))
+    # print(my_reader.get_point_coordinates()[:,0:2])
 
-    data = my_reader.get_pinns_format_input_data()
+    interpolate_vtu_onto_xml_defined_grid(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.vtu',
+                                      r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.xml',
+                                      r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu')
 
-    U_star = data['U_star']  # N x 2 x T
-    P_star = data['p_star']  # N x T
-    t_star = data['t']  # T x 1
-    X_star = data['X_star']  # N x 2
+    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu', 0.5,
+                              r'/home/chris/WorkData/nektar++/actual/bezier/master_data/')
 
+    # data = my_reader.get_unstructured_mesh_format_input_data()
+    #
+    # U_star = data['U_star']  # N x 2 x T
+    # P_star = data['p_star']  # N x T
+    # t_star = data['t']  # T x 1
+    # X_star = data['X_star']  # N x 2
+    #
     my_reader.plotly_plot_mesh()
 
     # NavierStokes.plot_solution(pinns_input_format_data['X_star'], data['U_star'][:, 0, 0], 1,

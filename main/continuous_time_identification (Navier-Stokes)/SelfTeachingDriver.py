@@ -1,5 +1,7 @@
 import NektarDriver
 import NavierStokes
+import matplotlib
+matplotlib.use('Agg')
 from NavierStokes import PhysicsInformedNN
 import SolutionQualityChecker
 import numpy as np
@@ -7,6 +9,7 @@ import logging
 import pickle
 import os
 import sys
+
 
 def create_logger():
     logger = logging.getLogger('SelfTeachingDriver')
@@ -25,6 +28,34 @@ def create_logger():
     logger.addHandler(file_log_handler)
 
     return logger
+
+
+class TrainingDataCountSpecifier(object):
+    PROPORTION = 0
+    ABSOLUTE = 1
+
+    def __init__(self, mode, parameter):
+        self.mode = mode
+        self.parameter = parameter
+        self.total_points = None
+
+    def set_num_total_available_datapoints(self, total_points):
+        self.total_points = total_points
+
+    def get_number_to_use_in_training(self):
+        if self.mode == TrainingDataCountSpecifier.PROPORTION:
+            if self.total_points is None:
+                raise RuntimeError("Total points not set on this class yet. Please set them before use.")
+            if self.parameter <= 0 or self.parameter >= 1:
+                raise RuntimeError("In proportional mode, the parameter must be between 0 and 1, exclusive.")
+            total_training_points = int(self.parameter * self.total_points)
+        elif self.mode == TrainingDataCountSpecifier.ABSOLUTE:
+            total_training_points = self.parameter
+        else:
+            raise RuntimeError("Unknown mode passed during construction of this class.")
+
+        return total_training_points
+
 
 if __name__ == '__main__':
 
@@ -51,7 +82,7 @@ if __name__ == '__main__':
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
-    N_train_in = 5000
+    training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.3)
     test_mode = False
     if not test_mode:
         num_training_iterations = 20000
@@ -62,7 +93,7 @@ if __name__ == '__main__':
         num_training_iterations = 20
         max_optimizer_iterations = 50
         parameter_range_start = 0.0
-        parameter_range_end = 0.4
+        parameter_range_end = 1.0
 
     number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 10) + 1
 
@@ -115,7 +146,7 @@ if __name__ == '__main__':
 
             # Ensure that we're not repeating a previously-done simulation, by cutting a hole in the permitted
             # parameter space around the suggested t_parameter, if we already have training data for that parameter.
-            exclusion_radius = np.pi / 10  # just something irrational so we don't bump into other values
+            exclusion_radius = np.pi / 30  # just something irrational so we don't bump into other values
             try:
                 t_parameter = loss_landscape.get_parameters_of_worst_loss_excluding_those_near_existing_simulations(additional_t_parameters_NS_simulations_run_at,
                                                                                                                     exclusion_radius)[0]
@@ -147,7 +178,7 @@ if __name__ == '__main__':
 
         NavierStokes.run_NS_trainer(pickled_model_filename, saved_tf_model_filename, input_data_save_file_tag,
                                     num_training_iterations, use_pressure_node_in_training, number_of_hidden_layers,
-                                    max_optimizer_iterations, N_train_in, load_existing_model=start_from_existing_model,
+                                    max_optimizer_iterations, training_count_specifier, load_existing_model=start_from_existing_model,
                                     additional_simulation_data=sim_dir_and_parameter_tuples, parent_logger=logger,
                                     data_caching_directory=master_model_data_root_path)
 

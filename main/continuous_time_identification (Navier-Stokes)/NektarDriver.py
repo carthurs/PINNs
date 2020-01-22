@@ -26,10 +26,11 @@ class NektarDriver(object):
         self.nektar_data_root_path = nektar_data_root_path
         self.reference_data_subfolder = reference_data_subfolder
         self.simulation_subfolder_template = simulation_subfolder_template
-        self.vtu_file_name = vtu_and_xml_file_basename + '.vtu'
+        self.vtu_and_xml_file_basename = vtu_and_xml_file_basename
+        self.vtu_file_name = self.vtu_and_xml_file_basename + '.vtu'
         self.initial_working_path = os.getcwd()
-        self.mesh_xml_file_name = vtu_and_xml_file_basename + '.xml'
-        self.fld_file_name = vtu_and_xml_file_basename + '.fld'
+        self.mesh_xml_file_name = self.vtu_and_xml_file_basename + '.xml'
+        self.fld_file_name = self.vtu_and_xml_file_basename + '.fld'
         self.logger = logger
         self.config_manager = ConfigManager.ConfigManager()
 
@@ -84,6 +85,12 @@ class NektarDriver(object):
             subprocess.run(['mpirun', '-np', '1',
                             self.config_manager.get_field_convert_exe(), self.fld_file_name,
                             self.mesh_xml_file_name, self.vtu_file_name]).check_returncode()
+
+
+        # TODO at some point (once existing data is all binned), this can go into the above if-guard
+        VtkDataReader.interpolate_vtu_onto_xml_defined_grid(self.vtu_file_name,
+                                                            self.mesh_xml_file_name,
+                                                            self.vtu_and_xml_file_basename+"_using_points_from_xml.vtu")
 
         os.chdir(self.initial_working_path)
 

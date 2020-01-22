@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 import itertools
 import collections
-
+import matplotlib.pyplot as plt
 
 def iterify(to_be_made_iterable):
     if (isinstance(to_be_made_iterable, collections.Iterable)):
@@ -53,6 +53,30 @@ class NektarXmlHandler(object):
                 coordinates = [float(ii) for ii in vertex.text.split()]
                 return coordinates
 
+    def get_node_coordinate_iterator(self):
+        for node in self._find_vertices():
+            coords = node.text.split()
+            coords_float = [float(i) for i in coords]
+            yield coords_float
+
+    def get_nodes_matching_coordinate(self, coordinate, component, tolerance=0.0001):
+        if component == 'x':
+            component_idx = 0
+        elif component == 'y':
+            component_idx = 1
+        elif component == 'z':
+            component_idx = 2
+        else:
+            raise RuntimeError("Unknown component.")
+
+        matching_node_indices = []
+        for vertex in self._find_vertices():
+            vertex_coordinates = vertex.text.split()
+            if abs(float(vertex_coordinates[component_idx]) - coordinate) < tolerance:
+                matching_node_indices.append(int(vertex.attrib['ID']))
+        print("Found {} matching nodes.", len(matching_node_indices))
+        return matching_node_indices
+
     # Can take either a composite ID, or a list of composite IDs (due to the iterify function)
     def get_nodes_in_composite(self, composite_ids):
         node_pairs_in_edges_in_composites = []
@@ -62,11 +86,11 @@ class NektarXmlHandler(object):
             node_pairs_in_edges_in_composites.extend(node_pairs_in_edges_in_composite)
 
         # Flatten the list (until now, it's a list of 2-element lists, each pair being the two nodes of an edge)
-        return set(itertools.chain.from_iterable(node_pairs_in_edges_in_composite))
+        return set(itertools.chain.from_iterable(node_pairs_in_edges_in_composites))
 
 
 def run_main():
-    handler = NektarXmlHandler('/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0/tube_bezier_1pt0mesh.xml')
+    handler = NektarXmlHandler('/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.xml')
     composite_1 = handler.find_composite_by_id(1)
     print('composite_1:', composite_1)
 
@@ -78,6 +102,26 @@ def run_main():
 
     nodes_in_composite = handler.get_nodes_in_composite(1)
     print('nodes in composite:', nodes_in_composite)
+
+    print("check true:", 29 in nodes_in_composite)
+
+    print("nodes matching x-coordinate:", handler.get_nodes_matching_coordinate(0, 'z', tolerance=0.0001))
+
+    # plt.figure()
+    # for composite_id in range(1, 5):
+    #     nodes_in_composite = handler.get_nodes_in_composite(composite_id)
+    #     x_coords = []
+    #     y_coords = []
+    #     for node in nodes_in_composite:
+    #         coords_of_node = handler.get_coordinates_of_node(node)
+    #         x_coords.append(coords_of_node[0])
+    #         y_coords.append(coords_of_node[1])
+    #
+    #     plt.scatter(x_coords, y_coords)
+    # plt.legend(range(1, 5))
+    # plt.show()
+
+
 
 
 if __name__ == '__main__':

@@ -79,7 +79,7 @@ class LossLandscape(object):
             self._compute_loss_landscape()
 
         row_exclusion_mask = [True] * self.data.shape[0]
-        for index, t_val in enumerate(self.data[:, -1]):
+        for index, t_val in enumerate(self.data[:, 0]):
             for excluded_parameter in excluded_parameters:
                 if abs(excluded_parameter - t_val) < exclusion_radius:
                     row_exclusion_mask[index] = False
@@ -163,7 +163,7 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, t_parameter_lins
 
             navier_stokes_loss, boundary_condition_loss = model.get_loss(x_star,
                                                                          y_star,
-                                                                         t_star,++++
+                                                                         t_star,
                                                                          boundary_condition_codes)
 
             gathered_losses[t_parameter] = navier_stokes_loss

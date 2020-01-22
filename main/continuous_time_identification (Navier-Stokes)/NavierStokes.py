@@ -13,6 +13,8 @@ tf.logging.set_verbosity(tf.logging.ERROR)
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 from tensorflow.python import debug as tf_debug
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import scipy.io
 from scipy.interpolate import griddata
@@ -59,7 +61,8 @@ class PhysicsInformedNN:
                                'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node', 'loss_summary', 'psi_pred',
                                'loss_velocity_summary', 'loss_ns_summary', 'loss_navier_stokes', 'loss_velocity',
                                'loss_pressure_node', 'other_summary_scalars', 'loss_pieces_out',
-                               'loss_boundary_conditions', 'max_optimizer_iterations', 'bc_codes_tf']
+                               'loss_boundary_conditions', 'max_optimizer_iterations', 'bc_codes_tf',
+                               'loss_bc_summary']
 
         for variable_to_remove in variables_to_remove:
             try:
@@ -152,18 +155,19 @@ class PhysicsInformedNN:
             #     self.loss = self.loss_navier_stokes + loss_t_gradient
             # else:
             self.loss = self.loss_velocity + self.loss_navier_stokes + \
-                        self.loss_pressure_node + self.loss_boundary_conditions
+                        self.loss_pressure_node + self.loss_boundary_conditions * navier_stokes_loss_scaling**2
         else:
             self.loss_velocity = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
                                  tf.reduce_sum(tf.square(self.v_tf - self.v_pred))
             self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
                                       tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
-            self.loss = self.loss_velocity + self.loss_navier_stokes + self.loss_boundary_conditions
+            self.loss = self.loss_velocity + self.loss_navier_stokes + self.loss_boundary_conditions * navier_stokes_loss_scaling**2
 
         self.loss_summary = tf.summary.scalar("loss", self.loss)
         self.loss_velocity_summary = tf.summary.scalar("loss_velocity", self.loss_velocity)
         self.loss_ns_summary = tf.summary.scalar("loss_navier_stokes",
                                               self.loss_navier_stokes/(navier_stokes_loss_scaling**2))
+        self.loss_bc_summary = tf.summary.scalar("loss_bc", self.loss_boundary_conditions)
 
         # self.loss_pieces_out = [u * v_x, v * v_y, p_y, v_xx, v_yy]
         self.other_summary_scalars = []
@@ -351,9 +355,11 @@ class PhysicsInformedNN:
             # Print
             if it % 40 == 0:
                 elapsed = time.time() - start_time
-                loss_value, loss_summary_retrieved, loss_vel_summary_retrieved, loss_ns_summary_retrieved, other_summary_scalars_retrieved = \
+                loss_value, loss_summary_retrieved, loss_vel_summary_retrieved, loss_ns_summary_retrieved,\
+                other_summary_scalars_retrieved, loss_bc_summary_retrieved = \
                                                     self.sess.run([self.loss, self.loss_summary,
-                                                                  self.loss_velocity_summary, self.loss_ns_summary, self.other_summary_scalars],
+                                                                  self.loss_velocity_summary, self.loss_ns_summary,
+                                                                   self.other_summary_scalars, self.loss_bc_summary],
                                                                   tf_dict)
                 self.loss_history = array_extending_insert(self.loss_history, self.loss_history_write_index, loss_value)
                 self.loss_history_write_index += 1
@@ -361,6 +367,7 @@ class PhysicsInformedNN:
                 summary_writer.add_summary(loss_summary_retrieved, it)
                 summary_writer.add_summary(loss_vel_summary_retrieved, it)
                 summary_writer.add_summary(loss_ns_summary_retrieved, it)
+                summary_writer.add_summary(loss_bc_summary_retrieved, it)
                 for summary in other_summary_scalars_retrieved:
                     summary_writer.add_summary(summary, it)
 
@@ -536,7 +543,7 @@ def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_tra
 
 def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, number_of_training_iterations,
                    use_pressure_node_in_training, number_of_hidden_layers, max_optimizer_iterations_in,
-                   N_train, load_existing_model=False, additional_simulation_data=None, parent_logger=None,
+                   N_train_specifier, load_existing_model=False, additional_simulation_data=None, parent_logger=None,
                    data_caching_directory=os.getcwd()):
 
     tensorboard_log_directory_base = '{}/logs'.format(data_caching_directory)
@@ -595,7 +602,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         #                                     additional_simulation_data
         file_names_and_parameter_values = additional_simulation_data
         for fn_and_pv in file_names_and_parameter_values:
-            data_reader.add_file_name("{}.vtu".format(fn_and_pv[0]), fn_and_pv[1])
+            data_reader.add_file_name("{}_using_points_from_xml.vtu".format(fn_and_pv[0]), fn_and_pv[1])
         if parent_logger is not None:
             parent_logger.info("NavierStokes.py is loading the following datafiles: {}".format(file_names_and_parameter_values))
 
@@ -614,6 +621,13 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         v = training_data['v']
         p = training_data['p']
         bc_codes = training_data['bc_codes']
+
+        total_data_length = len(u)
+        N_train_specifier.set_num_total_available_datapoints(total_data_length)
+        N_train = N_train_specifier.get_number_to_use_in_training()
+
+        parent_logger.info("Using {}% of the data for training ({}/{} points).".format(N_train/total_data_length*100,
+                                                                                       N_train, total_data_length))
 
         ######################################################################
         ######################## Noiseles Data ###############################
