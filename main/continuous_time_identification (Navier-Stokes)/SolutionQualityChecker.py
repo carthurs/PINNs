@@ -206,7 +206,7 @@ def plot_losses(gathered_losses, gathered_boundary_losses,
     second_panel_y_data = list(gathered_boundary_losses.values())
     scatter_x = parameters_with_real_simulation_data
     scatter_y = [gathered_losses[v] for v in scatter_x]
-    y_axis_range = (1e-8, 1e4)
+    y_axis_range = (1e-6, 1e8)
     NavierStokes.plot_graph(x_data, y_data, 'Loss over Parameters', scatter_x, scatter_y,
                             additional_fig_filename_tag, second_panel_y_data, y_range_1=y_axis_range,
                             y_range_2=y_axis_range, y_range_3=y_axis_range,
