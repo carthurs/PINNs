@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import NektarXmlHandler
 import ConfigManager
 import BoundaryConditionCodes as BC
+import logging
 
 
 def md5hash_file(filename):
@@ -67,13 +68,14 @@ def interpolate_vtu_onto_xml_defined_grid(vtu_data_to_be_interpolated_file_name,
 
 
 class VtkDataReader(object):
-    output_data_version = 1
+    output_data_version = 2
     NEKTAR_FIX_FACTOR = 0.00106  # workaround bug with Nektar++, which ignores density input parameter rho
     MODE_STRUCTURED = 0
     MODE_UNSTRUCTURED = 1
 
-    def __init__(self, full_filename, time_value_in, data_cache_path):
-        self.time_value = np.expand_dims(np.array([time_value_in]), axis=1)
+    def __init__(self, full_filename, parameters_container, data_cache_path):
+        self.time_value = np.expand_dims(np.array([parameters_container.get_t()]), axis=1)
+        self.curvature_value = np.expand_dims(np.array([parameters_container.get_r()]), axis=1)
 
         filename_without_extension, ignored_extension = os.path.splitext(full_filename)
         self.associated_xml_file_name = filename_without_extension + '.xml'
@@ -161,6 +163,7 @@ class VtkDataReader(object):
         return_data['X_star'] = self._get_coordinate_data()
         return_data['p_star'] = self._get_pressure_data()
         return_data['t'] = self.time_value
+        return_data['r'] = self.curvature_value
 
         raw_velocity_data_x_component = self.get_read_data_as_numpy_array('u')
         raw_velocity_data_y_component = self.get_read_data_as_numpy_array('v')
@@ -183,11 +186,14 @@ class VtkDataReader(object):
             if self.cached_output_filename_fullpath is not None:
                 with open(self.cached_output_filename_fullpath, 'rb') as infile:
                     return_data = pickle.load(infile)
+                logger = logging.getLogger('SelfTeachingDriver')
+                logger.info("loaded data from existing pickled class {}".format(self.cached_output_filename_fullpath))
                 return return_data
         except FileNotFoundError as e:
             return_data = dict()
 
         return_data['t'] = self.time_value
+        return_data['r'] = self.curvature_value
 
         irregular_mesh_coordinates = self._get_coordinate_data()
 
@@ -298,12 +304,12 @@ class MultipleFileReader(object):
             raise RuntimeError('Unknown value for parameter: mode.')
         self.file_names_by_parameter_values = dict()
 
-    def add_file_name(self, file_name, parameter_value):
-        data_for_this_file = VtkDataReader(file_name, parameter_value,
+    def add_file_name(self, file_name, parameters_container):
+        data_for_this_file = VtkDataReader(file_name, parameters_container,
                                            self.cached_data_path
                                           ).get_data_by_mode(self.mode)
 
-        self.file_names_by_parameter_values[parameter_value] = file_name
+        self.file_names_by_parameter_values[parameters_container] = file_name
 
         # Reformat the data so that we have arrays for x, y, u, v, p, and t which are 1D and all of the same length
         # num_parameter_slices*T, and such that the i-th entry of all arrays correspond to one another.
@@ -312,12 +318,16 @@ class MultipleFileReader(object):
 
         X_star = data_for_this_file['X_star']  # N x 2
         t_star = data_for_this_file['t']  # num_parameter_slices x 1
+        r_star = data_for_this_file['r']  # num_parameter_slices x 1
 
         N = X_star.shape[0]
         num_parameter_slices = t_star.shape[0]
 
         TT = np.tile(t_star, (1, N)).T  # N x num_parameter_slices
         data_for_this_file_streaming_format['t'] = TT.flatten()[:, None]  # N*num_parameter_slices x 1
+
+        RR = np.tile(r_star, (1, N)).T  # N x num_parameter_slices
+        data_for_this_file_streaming_format['r'] = RR.flatten()[:, None]  # N*num_parameter_slices x 1
 
         XX = np.tile(X_star[:, 0:1], (1, num_parameter_slices))  # N x num_parameter_slices
         x = XX.flatten()[:, None]  # N*num_parameter_slices x 1
@@ -367,14 +377,14 @@ class MultipleFileReader(object):
     def get_training_data(self):
         return self.gathered_data
 
-    def get_test_data(self, t_parameter_for_test):
+    def get_test_data(self, parameters_container_for_test):
         # Might want to switch this name out for  something passed in instead. Currently we're just evaluating on
         # a full space-time slice from which we've sampled training data (which is why its file name is in the
         # dictionary file_names_by_parameter_values).
-        file_name = self.file_names_by_parameter_values[t_parameter_for_test]
+        file_name = self.file_names_by_parameter_values[parameters_container_for_test]
 
         raw_data_for_test = VtkDataReader(file_name,
-                                          t_parameter_for_test,
+                                          parameters_container_for_test,
                                           self.cached_data_path
                                          ).get_data_by_mode(self.mode)
 
@@ -386,7 +396,8 @@ class MultipleFileReader(object):
         test_data['y'] = X_star[:, 1:2]
 
         N = len(test_data['y'])
-        test_data['t'] = np.ones((N, 1)) * t_parameter_for_test
+        test_data['t'] = np.ones((N, 1)) * parameters_container_for_test.get_t()
+        test_data['r'] = np.ones((N, 1)) * parameters_container_for_test.get_r()
 
         U_star = raw_data_for_test['U_star']  # num_parameter_slices x 2 x T
         test_data['u'] = U_star[:, 0]

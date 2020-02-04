@@ -1,1 +1,7 @@
 *.txt linguist-vendored
+*.png linguist-vendored
+*.eps linguist-vendored
+*.dat linguist-vendored
+*.pdf linguist-vendored
+*.pyc linguist-vendored
+*.pyd linguist-vendored

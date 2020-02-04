@@ -4,6 +4,7 @@ import subprocess
 import fileinput
 import VtkDataReader
 import ConfigManager
+import SimulationParameterManager
 
 
 def substitute_text_in_file(filename, text_to_replace, replacement_text):
@@ -34,19 +35,19 @@ class NektarDriver(object):
         self.logger = logger
         self.config_manager = ConfigManager.ConfigManager()
 
-    def generate_vtu_mesh_for_parameter(self, t_param):
-        self._prepare_simulation_files(t_param, generate_vtu_without_solution_data=True)
+    def generate_vtu_mesh_for_parameter(self, param_container):
+        self._prepare_simulation_files(param_container, generate_vtu_without_solution_data=True)
 
-
-    def _prepare_simulation_files(self, t_param, generate_vtu_without_solution_data=False):
+    def _prepare_simulation_files(self, parameters_container, generate_vtu_without_solution_data=False):
         starting_dir = os.getcwd()
 
         os.chdir(self.nektar_data_root_path)
-        simulation_subfolder = self.simulation_subfolder_template.format(t_param)
+        simulation_subfolder = self.simulation_subfolder_template.format(parameters_container.get_t(),
+                                                                         parameters_container.get_r())
 
         distutils.dir_util.copy_tree(self.reference_data_subfolder, simulation_subfolder)
         os.chdir(simulation_subfolder)
-        self._generate_mesh(t_param)
+        self._generate_mesh(parameters_container.get_t())
         if generate_vtu_without_solution_data and not os.path.exists(self.vtu_file_name):
             subprocess.run(['mpirun', '-np', '1',
                             self.config_manager.get_field_convert_exe(),
@@ -54,18 +55,20 @@ class NektarDriver(object):
 
         os.chdir(starting_dir)
 
-    def run_simulation(self, t_parameter):
-        self._prepare_simulation_files(t_parameter)
+    def run_simulation(self, parameters_container):
+        self._prepare_simulation_files(parameters_container)
         os.chdir(self.nektar_data_root_path)
-        os.chdir(self.simulation_subfolder_template.format(t_parameter))
+        simulation_subfolder = self.simulation_subfolder_template.format(parameters_container.get_t(),
+                                                                         parameters_container.get_r())
+        os.chdir(simulation_subfolder)
 
-        # Set the peak inflow velocity to be self.t_parameter
-        # self._set_simulation_inflow_parameter(t_parameter)
+        # Set the peak inflow velocity
+        self._set_simulation_inflow_parameter(parameters_container.get_t())
 
         simulation_required = True  # assume true; we may chance this in a moment...
         if os.path.exists(self.vtu_file_name):
             vtk_file_checker_reader = VtkDataReader.VtkDataReader(self.vtu_file_name,
-                                                                  t_parameter,
+                                                                  parameters_container,
                                                                   None)
             simulation_required = not vtk_file_checker_reader.has_simulation_output_data()
 
@@ -97,8 +100,12 @@ class NektarDriver(object):
     def _set_simulation_inflow_parameter(self, t_parameter):
         substitute_text_in_file('conditions.xml', 'y*(10-y)/25', 'y*(10-y)/25*{}'.format(t_parameter))
 
-    def get_vtu_file_without_extension(self, t_parameter):
-        path_to_vtu_file_without_file_extension = self.nektar_data_root_path + self.simulation_subfolder_template.format(t_parameter) + '/' + self.vtu_file_name.split('.')[0]
+    def get_vtu_file_without_extension(self, parameters_container):
+        path_to_vtu_file_without_file_extension = self.nektar_data_root_path +\
+                                                  self.simulation_subfolder_template.format(parameters_container.get_t(),
+                                                                                            parameters_container.get_r()) +\
+                                                  '/' +\
+                                                  self.vtu_file_name.split('.')[0]
         return path_to_vtu_file_without_file_extension
 
     def _generate_mesh(self, domain_shape_parameter):
@@ -123,7 +130,10 @@ if __name__ == '__main__':
     reference_data_subfolder = r'tube_10mm_diameter_pt2Mesh_correctViscosity'
     ref_data_subfolder_template = reference_data_subfolder + r'_{}'
     t_parameter = 5.0
+    r_parameter = 4.0
+
+    parameter_container = SimulationParameterManager.SimulationParameterContainer(t_parameter, r_parameter)
 
     driver = NektarDriver(base_working_dir, reference_data_subfolder,
                           ref_data_subfolder_template, 'tube10mm_diameter_1pt0mesh')
-    driver.run_simulation(t_parameter)
+    driver.run_simulation(parameter_container)

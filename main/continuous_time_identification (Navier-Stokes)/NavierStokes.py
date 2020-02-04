@@ -33,6 +33,8 @@ import sys
 import warnings
 import VtkDataReader
 import BoundaryConditionCodes as BC
+import SimulationParameterManager as SPM
+import logging
 
 # np.random.seed(1234)
 # tf.set_random_seed(1234)
@@ -57,7 +59,8 @@ class PhysicsInformedNN:
     def __getstate__(self):
         odict = self.__dict__.copy()
         variables_to_remove = ['sess', 'optimizer_Adam', 'train_op_Adam', 'weights', 'biases', 'lambda_1',
-                               'lambda_2', 'x_tf', 'y_tf', 't_tf', 'u_tf', 'v_tf', 'u_pred', 'v_pred', 'p_pred',
+                               'lambda_2', 'x_tf', 'y_tf', 't_tf', 'u_tf', 'v_tf', 'r_tf', 'u_pred',
+                               'v_pred', 'p_pred',
                                'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node', 'loss_summary', 'psi_pred',
                                'loss_velocity_summary', 'loss_ns_summary', 'loss_navier_stokes', 'loss_velocity',
                                'loss_pressure_node', 'other_summary_scalars', 'loss_pieces_out',
@@ -96,7 +99,7 @@ class PhysicsInformedNN:
         # tf placeholders and graph
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                     log_device_placement=False,
+                                                     log_device_placement=True,
                                                      gpu_options=gpu_options))
 
         # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
@@ -106,6 +109,7 @@ class PhysicsInformedNN:
         self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]], name='x_placeholder')
         self.y_tf = tf.placeholder(tf.float32, shape=[None, self.y.shape[1]], name='y_placeholder')
         self.t_tf = tf.placeholder(tf.float32, shape=[None, self.t.shape[1]], name='t_placeholder')
+        self.r_tf = tf.placeholder(tf.float32, shape=[None, self.t.shape[1]], name='r_placeholder')
 
         self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]], name='u_placeholder')
         self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]], name='v_placeholder')
@@ -113,7 +117,7 @@ class PhysicsInformedNN:
         self.bc_codes_tf = tf.placeholder(tf.float32, shape=[None], name='bc_codes_placeholder')
 
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node, self.loss_pieces_out =\
-                                                                            self.net_NS(self.x_tf, self.y_tf, self.t_tf)
+                                                                            self.net_NS(self.x_tf, self.y_tf, self.t_tf, self.r_tf)
 
         inflow_condition = lambda y: (10.0-y)*y/25.0  #* self.t_tf
         zeros = self.u_pred * 0.0  # stupid, I know, but I can't work out how to get the right shape otherwise
@@ -199,8 +203,8 @@ class PhysicsInformedNN:
     def set_max_optimizer_iterations(self, max_iterations_in):
         self.max_optimizer_iterations = max_iterations_in
 
-    def reset_training_data(self, x, y, t, u, v, bc_codes):
-        X = np.concatenate([x, y, t], 1)
+    def reset_training_data(self, x, y, t, r, u, v, bc_codes):
+        X = np.concatenate([x, y, t, r], 1)
 
         self.lb = X.min(0)
         self.ub = X.max(0)
@@ -217,6 +221,7 @@ class PhysicsInformedNN:
         self.x = X[:, 0:1]
         self.y = X[:, 1:2]
         self.t = X[:, 2:3]
+        self.r = X[:, 3:4]
 
         self.u = u
         self.v = v
@@ -225,12 +230,12 @@ class PhysicsInformedNN:
 
 
     # Initialize the class
-    def __init__(self, x, y, t, u, v, bc_codes, layers, p_reference_point, discover_navier_stokes_parameters,
+    def __init__(self, x, y, t, r, u, v, bc_codes, layers, p_reference_point, discover_navier_stokes_parameters,
                  true_viscosity_in, true_density_in, max_optimizer_iterations_in):
         self.p_at_first_node = 0.0
         self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
 
-        self.reset_training_data(x, y, t, u, v, bc_codes)
+        self.reset_training_data(x, y, t, r, u, v, bc_codes)
 
         self.p_reference_point = p_reference_point
 
@@ -248,9 +253,9 @@ class PhysicsInformedNN:
         weights = []
         biases = []
         num_layers = len(layers)
-        for l in range(0, num_layers-1):
-            W = self.xavier_init(size=[layers[l], layers[l+1]])
-            b = tf.Variable(tf.zeros([1,layers[l+1]], dtype=tf.float32), dtype=tf.float32)
+        for layer in range(0, num_layers-1):
+            W = self.xavier_init(size=[layers[layer], layers[layer+1]])
+            b = tf.Variable(tf.zeros([1, layers[layer+1]], dtype=tf.float32), dtype=tf.float32)
             weights.append(W)
             biases.append(b)
         return weights, biases
@@ -274,13 +279,13 @@ class PhysicsInformedNN:
         Y = tf.add(tf.matmul(H, W), b)
         return Y
 
-    def net_NS(self, x, y, t):
+    def net_NS(self, x, y, t, r):
         lambda_1 = self.lambda_1
         lambda_2 = self.lambda_2
 
         # bias_term = tf.fill([tf.shape(x)[0], 1], 1.0)
 
-        psi_and_p = self.neural_net(tf.concat([x, y, t], 1), self.weights, self.biases)
+        psi_and_p = self.neural_net(tf.concat([x, y, t, r], 1), self.weights, self.biases)
 
         psi = psi_and_p[:, 0]  # Seems to be that this is a scalar potential for the velocity, and that is what we predict
         p = psi_and_p[:, 1]  # Pressure field
@@ -325,7 +330,7 @@ class PhysicsInformedNN:
 
         # run the NN a second time on the first node (at x=1, y=-2, t=0) to get a reference pressure whose value we can
         # target in order to control the pressure field's absolute values;
-        psi_and_p_ignore_psi = self.neural_net(tf.constant(self.p_reference_point[0:3], shape=(1, 3)), self.weights, self.biases)
+        psi_and_p_ignore_psi = self.neural_net(tf.constant(self.p_reference_point[0:3], shape=(1, 4)), self.weights, self.biases)
         self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
 
         return u, v, p, f_u, f_v, psi, self.p_at_first_node, loss_pieces  #, psi_t, p_t
@@ -342,7 +347,7 @@ class PhysicsInformedNN:
 
     def train(self, nIter, summary_writer, x_predict, y_predict, t_predict):
 
-        tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
+        tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t, self.r_tf: self.r,
                    self.u_tf: self.u, self.v_tf: self.v, self.bc_codes_tf: self.bc_codes}
 
         self.loss_history = np.zeros(self.max_optimizer_iterations + 1)  # 1 extra as a marker of where it switches between the optimizers
@@ -403,7 +408,7 @@ class PhysicsInformedNN:
                                        loss_callback = self.callback)
 
     def call_just_LBGDSF_optimizer(self):
-        tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
+        tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t, self.r_tf: self.r,
                    self.u_tf: self.u, self.v_tf: self.v, self.bc_codes_tf: self.bc_codes}
 
         self._get_optimizer().minimize(self.sess,
@@ -411,9 +416,9 @@ class PhysicsInformedNN:
                                        fetches=[self.loss, self.lambda_1, self.lambda_2],
                                        loss_callback=self.callback)
 
-    def predict(self, x_star, y_star, t_star):
+    def predict(self, x_star, y_star, t_star, r_star):
 
-        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.r_tf: r_star}
 
         u_star = self.sess.run(self.u_pred, tf_dict)
         v_star = self.sess.run(self.v_pred, tf_dict)
@@ -425,8 +430,9 @@ class PhysicsInformedNN:
     def getLossHistory(self):
         return self.loss_history
 
-    def get_loss(self, x_star, y_star, t_star, boundary_condition_codes):
-        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.bc_codes_tf: boundary_condition_codes}
+    def get_loss(self, x_star, y_star, t_star, r_star, boundary_condition_codes):
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.r_tf: r_star,
+                   self.bc_codes_tf: boundary_condition_codes}
 
         navier_stokes_loss = self.sess.run(self.loss_navier_stokes, tf_dict)
         boundary_condition_loss = self.sess.run(self.loss_boundary_conditions, tf_dict)
@@ -434,8 +440,8 @@ class PhysicsInformedNN:
 
         return navier_stokes_loss, boundary_condition_loss
 
-    def get_solution(self, x_star, y_star, t_star):
-        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star}
+    def get_solution(self, x_star, y_star, t_star, r_star):
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.r_tf: r_star}
         return self.sess.run(self.u_pred, tf_dict)
 
 
@@ -538,7 +544,10 @@ def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_tra
             pass
         tf.train.Saver().save(model_in.sess, saved_tf_model_filename_in)
     except TypeError as e:
-        print("Error pickling model: model not saved!", e)
+        error_message = "Error pickling model: model not saved!"
+        print(error_message, e)
+        logger = logging.getLogger('SelfTeachingDriver')
+        logger.error(error_message)
 
 
 def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, number_of_training_iterations,
@@ -572,7 +581,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         timer.tic()
 
         do_noisy_data_case = False
-        plot_lots = True
+        plot_lots = False
         train_model_further_with_new_data = True
         # use_pressure_node_in_training = True
         discover_navier_stokes_parameters = False
@@ -580,7 +589,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         true_density_value = 0.00106  # 1.0
         # number_of_training_iterations = 100000  # 200000
 
-        layers = [3] + [20] * number_of_hidden_layers + [3]
+        layers = [4] + [20] * number_of_hidden_layers + [3]
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
         # Load Data
@@ -617,6 +626,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         x = training_data['x']
         y = training_data['y']
         t = training_data['t']
+        r = training_data['r']
         u = training_data['u']
         v = training_data['v']
         p = training_data['p']
@@ -637,18 +647,21 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         x_train = x[idx, :]
         y_train = y[idx, :]
         t_train = t[idx, :]
+        r_train = r[idx, :]
         u_train = u[idx, :]
         v_train = v[idx, :]
         bc_codes_train = bc_codes[idx]
 
         # Test Data
-        test_data_parameter_t = t_train[0, 0]  # TODO make this actually test on a slice of our choosing, rather than on a fuller slice of the training data. This is ok, but we can do better.
-        test_data = data_reader.get_test_data(test_data_parameter_t)
+        # TODO make this actually test on a slice of our choosing, rather than on a fuller slice of the training data. This is ok, but we can do better.
+        test_data_parameters = SPM.SimulationParameterContainer(t_train[0, 0], r_train[0, 0])
+        test_data = data_reader.get_test_data(test_data_parameters)
 
         X_star = test_data['X_star']  # TODO this is somewhat redundant; X_star and (X_test and Y_test) contain the same data. Refactor.
         X_test = test_data['x']
         Y_test = test_data['y']
         t_test = test_data['t']
+        r_test = test_data['r']
         u_test = test_data['u']
         v_test = test_data['v']
         p_test = test_data['p']
@@ -672,19 +685,19 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
                 model.set_max_optimizer_iterations(max_optimizer_iterations_in)
 
             model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                         log_device_placement=False))
+                                                         log_device_placement=True))
 
             tf.train.Saver().restore(model.sess, saved_tf_model_filename)
 
             # model.call_just_LBGDSF_optimizer()
             if train_model_further_with_new_data:
-                model.reset_training_data(x_train, y_train, t_train, u_train, v_train, bc_codes_train)
+                model.reset_training_data(x_train, y_train, t_train, r_train, u_train, v_train, bc_codes_train)
 
                 train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
                                        t_test, pickled_model_filename_out, saved_tf_model_filename_out)
         else:
             # Training
-            model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, bc_codes_train, layers,
+            model = PhysicsInformedNN(x_train, y_train, t_train, r_train, u_train, v_train, bc_codes_train, layers,
                                       p_single_reference_node,
                                       discover_navier_stokes_parameters, true_viscosity_value, true_density_value,
                                       max_optimizer_iterations_in)
@@ -696,7 +709,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         if plot_lots:
             for t_parameter in [1, 1.5, 2, 2.5, 3, 4, 3.5, 4.5, 2.2, 1.1, 0.5, -0.5, 5.0, 0.0]:
                 t_test = t_test * 0 + t_parameter
-                u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test)
+                u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test, r_test)
                 plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
                 plot_solution(X_star, u_pred, plot_title)
 
@@ -704,7 +717,8 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
                 plot_solution(X_star, p_pred, plot_title)
 
         t_test = t_test * 0 + 1.0
-        u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test)
+        r_test = r_test * 0 + 1.0
+        u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test, r_test)
         lambda_1_value = model.sess.run(model.lambda_1)
         lambda_2_value = model.sess.run(model.lambda_2)
 

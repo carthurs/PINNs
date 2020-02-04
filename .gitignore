@@ -1,1 +1,11 @@
 *.pyc
+*.pyd
+*.png
+*.index
+*saved_model*
+*pickle*
+*.dat
+config.json
+logs/*
+SelfTeachingDriverLog.txt
+

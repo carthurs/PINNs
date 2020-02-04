@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use('Agg')
 from NavierStokes import PhysicsInformedNN
 import SolutionQualityChecker
+import SimulationParameterManager
 import numpy as np
 import logging
 import pickle
@@ -66,7 +67,7 @@ if __name__ == '__main__':
     # nektar_data_root_path = r'/home/chris/WorkData/nektar++/actual/coarser/'
     reference_data_subfolder = r'basic'
     # reference_data_subfolder = r'tube_10mm_diameter_1pt0Mesh_correctViscosity'
-    simulation_subfolder_template = reference_data_subfolder + r'_t{}/'
+    simulation_subfolder_template = reference_data_subfolder + r'_t{}_r{}/'
     master_model_data_root_path = r'/home/chris/WorkData/nektar++/actual/bezier/master_data/'
     # master_model_data_root_path = r'/home/chris/workspace/PINNs/PINNs/main/continuous_time_identification (Navier-Stokes)'
     vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
@@ -83,19 +84,19 @@ if __name__ == '__main__':
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
     training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.3)
-    test_mode = False
+    test_mode = True
     if not test_mode:
         num_training_iterations = 20000
         max_optimizer_iterations = 50000
         parameter_range_start = 0.0
-        parameter_range_end = 6.0
+        parameter_range_end = 1.0
     else:
         num_training_iterations = 20
         max_optimizer_iterations = 50
         parameter_range_start = 0.0
         parameter_range_end = 1.0
 
-    number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 10) + 1
+    number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 3) + 1
 
     try:
         sim_dir_and_parameter_tuples_picklefile = sim_dir_and_parameter_tuples_picklefile_basename.format(starting_index)
@@ -110,15 +111,19 @@ if __name__ == '__main__':
         logger.warning("Previous simualtion iterations not found. Starting from scratch at iteration {}".format(
                                                                                                         starting_index))
 
-    t_parameter_linspace = np.linspace(parameter_range_start, parameter_range_end, num=number_of_parameter_points)
+    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_range_start,
+                                                                              parameter_range_end,
+                                                                              number_of_parameter_points)
+
+
     nektar_driver = NektarDriver.NektarDriver(nektar_data_root_path, reference_data_subfolder,
                                               simulation_subfolder_template,
                                               vtu_and_xml_file_basename,
                                               logger)
     # Ensure that there are meshes for all the t-parameters we're about to query for:
-    for t_value in t_parameter_linspace:
-        logger.info("Creating mesh for evaluating the predicted solution when parameter={}".format(t_value))
-        nektar_driver.generate_vtu_mesh_for_parameter(t_value)
+    for param_container in parameter_manager.all_parameter_points():
+        logger.info("Creating mesh for evaluating the predicted solution when parameters are {}".format(param_container))
+        nektar_driver.generate_vtu_mesh_for_parameter(param_container)
 
     for new_data_iteration in range(starting_index, ending_index):
         logger.info('Starting iteration {}'.format(new_data_iteration))
@@ -131,8 +136,7 @@ if __name__ == '__main__':
         if new_data_iteration == 0:
             # If this is the first iteration, no data is available yet, so we just work with the parameter at the
             # midpoint of the parameter range of interest.
-            midpoint = int(len(t_parameter_linspace) / 2)
-            t_parameter = t_parameter_linspace[midpoint]
+            parameters_container = parameter_manager.get_midpoint_parameters()
             start_from_existing_model = False
         else:
             logger.info('Will load tensorflow file {}'.format(saved_tf_model_filename.format(input_data_save_file_tag)))
@@ -141,16 +145,16 @@ if __name__ == '__main__':
             loss_landscape = SolutionQualityChecker.LossLandscape(
                 pickled_model_filename.format(input_data_save_file_tag),
                 saved_tf_model_filename.format(input_data_save_file_tag),
-                t_parameter_linspace, master_model_data_root_path,
-                reference_vtu_filename_template, num_parameters_per_point=1)
+                parameter_manager, master_model_data_root_path,
+                reference_vtu_filename_template)
 
             # Ensure that we're not repeating a previously-done simulation, by cutting a hole in the permitted
             # parameter space around the suggested t_parameter, if we already have training data for that parameter.
             exclusion_radius = np.pi / 30  # just something irrational so we don't bump into other values
             try:
-                t_parameter = loss_landscape.get_parameters_of_worst_loss_excluding_those_near_existing_simulations(additional_t_parameters_NS_simulations_run_at,
-                                                                                                                    exclusion_radius)[0]
-                additional_t_parameters_NS_simulations_run_at.append(t_parameter)
+                parameters_container = loss_landscape.get_parameters_of_worst_loss_excluding_those_near_existing_simulations(additional_t_parameters_NS_simulations_run_at,
+                                                                                                                    exclusion_radius)
+                # additional_t_parameters_NS_simulations_run_at.append(t_parameter)
             except SolutionQualityChecker.LossLandscape.NoAvailableParameters:
                 logger.info("Could not find another parameter value to simulate at. Parameter space is saturated;\
                                                  no further simulations possible with an exclusion_neighbourhood \
@@ -160,16 +164,15 @@ if __name__ == '__main__':
 
             start_from_existing_model = True
 
-        info_string = 'Will get data for parameter value t={}'.format(t_parameter)
-        logger.info(info_string)
+        parameters_container.log()
 
         nektar_driver = NektarDriver.NektarDriver(nektar_data_root_path, reference_data_subfolder,
                                                   simulation_subfolder_template,
                                                   vtu_and_xml_file_basename,
                                                   logger)
-        nektar_driver.run_simulation(t_parameter)
+        nektar_driver.run_simulation(parameters_container)
 
-        sim_dir_and_parameter_tuples.append((nektar_driver.get_vtu_file_without_extension(t_parameter), t_parameter))
+        sim_dir_and_parameter_tuples.append((nektar_driver.get_vtu_file_without_extension(parameters_container), parameters_container))
 
         picklefile_name = sim_dir_and_parameter_tuples_picklefile_basename.format(input_data_save_file_tag+1)
         with open(picklefile_name, 'wb') as outfile:
@@ -189,7 +192,7 @@ if __name__ == '__main__':
         pickled_model_filename_post = pickled_model_filename.format(input_data_save_file_tag+1)
 
         SolutionQualityChecker.compute_and_plot_losses(plot_all_figures, pickled_model_filename_post,
-                                                       saved_tf_model_filename_post, t_parameter_linspace,
+                                                       saved_tf_model_filename_post, parameter_manager,
                                                        master_model_data_root_path,
                                                        reference_vtu_filename_template,
                                                        additional_real_simulation_data_parameters=additional_t_parameters_NS_simulations_run_at,
