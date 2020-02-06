@@ -99,7 +99,7 @@ class PhysicsInformedNN:
         # tf placeholders and graph
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                     log_device_placement=True,
+                                                     log_device_placement=False,
                                                      gpu_options=gpu_options))
 
         # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
@@ -685,7 +685,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
                 model.set_max_optimizer_iterations(max_optimizer_iterations_in)
 
             model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                         log_device_placement=True))
+                                                         log_device_placement=False))
 
             tf.train.Saver().restore(model.sess, saved_tf_model_filename)
 

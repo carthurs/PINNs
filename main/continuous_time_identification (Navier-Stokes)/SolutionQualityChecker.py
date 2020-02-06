@@ -212,7 +212,8 @@ def plot_losses(gathered_losses, gathered_boundary_losses,
 
     print("Blue indicates that simulation data was used at this point. Yellow indicates interpolation.")
     accuracy_threshold = 0.002
-    for key in sorted(gathered_losses):
+    sorted_gathered_losses = sorted(gathered_losses)
+    for key in sorted_gathered_losses:
         value = gathered_losses[key]
         if value > accuracy_threshold:
             value = style.RED(value)
@@ -225,11 +226,11 @@ def plot_losses(gathered_losses, gathered_boundary_losses,
 
     print(style.RESET("Resetting terminal colours..."))
 
-    x_data = range(len(gathered_losses))  # sorted(gathered_losses)
-    y_data = [gathered_losses[x] for x in sorted(gathered_losses)]
+    x_data = range(len(gathered_losses))  # sorted_gathered_losses
+    y_data = [gathered_losses[x] for x in sorted_gathered_losses]
     second_panel_y_data = list(gathered_boundary_losses.values())
     scatter_x = []
-    for index, key in enumerate(sorted(gathered_losses)):
+    for index, key in enumerate(sorted_gathered_losses):
         if key in parameters_with_real_simulation_data:
             scatter_x.append(index)
     scatter_y = [gathered_losses[v] for v in parameters_with_real_simulation_data]
