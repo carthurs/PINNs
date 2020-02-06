@@ -119,7 +119,7 @@ class PhysicsInformedNN:
         self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node, self.loss_pieces_out =\
                                                                             self.net_NS(self.x_tf, self.y_tf, self.t_tf, self.r_tf)
 
-        inflow_condition = lambda y: (10.0-y)*y/25.0  #* self.t_tf
+        inflow_condition = lambda y: (10.0-y)*y/25.0 * self.t_tf
         zeros = self.u_pred * 0.0  # stupid, I know, but I can't work out how to get the right shape otherwise
         # self.loss_boundary_conditions = tf.reduce_sum(zeros)
 
