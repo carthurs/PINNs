@@ -47,7 +47,7 @@ class NektarDriver(object):
 
         distutils.dir_util.copy_tree(self.reference_data_subfolder, simulation_subfolder)
         os.chdir(simulation_subfolder)
-        self._generate_mesh(parameters_container.get_t())
+        self._generate_mesh(parameters_container.get_r())
         if generate_vtu_without_solution_data and not os.path.exists(self.vtu_file_name):
             subprocess.run(['mpirun', '-np', '1',
                             self.config_manager.get_field_convert_exe(),
