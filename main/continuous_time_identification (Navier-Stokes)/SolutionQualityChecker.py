@@ -1,6 +1,7 @@
 from NavierStokes import PhysicsInformedNN
 import NavierStokes
 import VtkDataReader
+import logging
 import tensorflow as tf
 import pickle
 import numpy as np
@@ -109,6 +110,13 @@ class LossLandscape(object):
 def get_mesh_embedded_in_regular_grid(mesh_filename, cached_data_dir, parameter_container):
     # data_file = r'/home/chris/WorkData/nektar++/actual/tube_10mm_diameter_pt2Mesh_correctViscosity/tube10mm_diameter_pt05mesh.vtu'
     # data_file = r'E:\Dev\PINNs\PINNs\main\Data\tube_10mm_diameter_pt2Mesh_correctViscosity\tube10mm_diameter_pt05mesh.vtu'
+
+    info_string = "==== Loaded mesh file {} with parameters r={}, t={}".format(mesh_filename, parameter_container.get_r(), parameter_container.get_t())
+    logger = logging.getLogger('SelfTeachingDriver')
+    logger.info(info_string)
+
+    logger.info("Data dir was {}".format(cached_data_dir))
+
     data_reader = VtkDataReader.VtkDataReader(mesh_filename, parameter_container, cached_data_dir)
     data = data_reader.get_data_by_mode(VtkDataReader.VtkDataReader.MODE_STRUCTURED)
     X_star = data['X_star']  # N x 2
@@ -141,6 +149,9 @@ def plot_on_regular_grid(data_file, data_directory, parameter_container, model, 
                                                                          parameter_container.get_r(),
                                                                          np.max(u_pred))
     NavierStokes.plot_solution(X_star, u_pred, plot_title, relative_or_absolute_folder_path=figure_path)
+
+    logger = logging.getLogger('SelfTeachingDriver')
+    logger.info("plotting with title {}".format(plot_title))
 
     plot_title = "Predicted Pressure Parameter t {} r {} max observed {}".format(parameter_container.get_t(),
                                                                                  parameter_container.get_r(),
@@ -212,8 +223,8 @@ def plot_losses(gathered_losses, gathered_boundary_losses,
 
     print("Blue indicates that simulation data was used at this point. Yellow indicates interpolation.")
     accuracy_threshold = 0.002
-    sorted_gathered_losses = sorted(gathered_losses)
-    for key in sorted_gathered_losses:
+    sorted_keys_for_gathered_losses = sorted(gathered_losses)
+    for key in sorted_keys_for_gathered_losses:
         value = gathered_losses[key]
         if value > accuracy_threshold:
             value = style.RED(value)
@@ -226,14 +237,16 @@ def plot_losses(gathered_losses, gathered_boundary_losses,
 
     print(style.RESET("Resetting terminal colours..."))
 
-    x_data = range(len(gathered_losses))  # sorted_gathered_losses
-    y_data = [gathered_losses[x] for x in sorted_gathered_losses]
+    x_data = range(len(gathered_losses))  # sorted_keys_for_gathered_losses
+    y_data = [gathered_losses[x] for x in sorted_keys_for_gathered_losses]
     second_panel_y_data = list(gathered_boundary_losses.values())
     scatter_x = []
-    for index, key in enumerate(sorted_gathered_losses):
+    scatter_y = []
+    for index, key in enumerate(sorted_keys_for_gathered_losses):
         if key in parameters_with_real_simulation_data:
             scatter_x.append(index)
-    scatter_y = [gathered_losses[v] for v in parameters_with_real_simulation_data]
+            scatter_y.append(gathered_losses[sorted_keys_for_gathered_losses[index]])
+
     y_axis_range = (1e-6, 1e8)
     NavierStokes.plot_graph(x_data, y_data, 'Loss over Parameters', scatter_x, scatter_y,
                             additional_fig_filename_tag, second_panel_y_data, y_range_1=y_axis_range,

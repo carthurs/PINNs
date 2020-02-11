@@ -12,6 +12,7 @@ import NektarXmlHandler
 import ConfigManager
 import BoundaryConditionCodes as BC
 import logging
+import SimulationParameterManager as SPM
 
 
 def md5hash_file(filename):
@@ -417,12 +418,17 @@ if __name__ == '__main__':
     # print(my_reader.get_read_data_as_numpy_array('u'))
     # print(my_reader.get_point_coordinates()[:,0:2])
 
-    interpolate_vtu_onto_xml_defined_grid(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.vtu',
-                                      r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.xml',
-                                      r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu')
+    # interpolate_vtu_onto_xml_defined_grid(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.vtu',
+    #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.xml',
+    #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu')
 
-    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu', 0.5,
-                              r'/home/chris/WorkData/nektar++/actual/bezier/master_data/')
+    param_container = SPM.SimulationParameterContainer(1.0, 0.6666)
+    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0_r0.0/tube_bezier_1pt0mesh.vtu', param_container,
+                              None)
+
+    # my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0_r1.0/tube_bezier_1pt0mesh.vtu',
+    #                           param_container,
+    #                           None)
 
     # data = my_reader.get_unstructured_mesh_format_input_data()
     #
