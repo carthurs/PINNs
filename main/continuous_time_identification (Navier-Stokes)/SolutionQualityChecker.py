@@ -9,6 +9,7 @@ import os
 import sys
 import tqdm
 import SimulationParameterManager as SPM
+import multiprocessing
 
 if sys.platform.lower() == "win32":
     os.system('color')
@@ -135,16 +136,7 @@ def get_mesh_embedded_in_regular_grid(mesh_filename, cached_data_dir, parameter_
     return X_star, t_star_out, r_star_out
 
 
-def plot_on_regular_grid(data_file, data_directory, parameter_container, model, figure_path):
-    X_star, t_star, r_star = get_mesh_embedded_in_regular_grid(data_file, data_directory, parameter_container)
-
-    x_star = X_star[:, 0:1]
-    y_star = X_star[:, 1:2]
-
-    t_star = t_star * 0 + parameter_container.get_t()
-    r_star = r_star * 0 + parameter_container.get_r()
-    u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star, r_star)
-
+def _do_plot(parameter_container, X_star, u_pred, p_pred, figure_path):
     plot_title = "Predicted Velocity U t {} r {} max observed {}".format(parameter_container.get_t(),
                                                                          parameter_container.get_r(),
                                                                          np.max(u_pred))
@@ -157,6 +149,23 @@ def plot_on_regular_grid(data_file, data_directory, parameter_container, model, 
                                                                                  parameter_container.get_r(),
                                                                                  np.max(p_pred))
     NavierStokes.plot_solution(X_star, p_pred, plot_title, relative_or_absolute_folder_path=figure_path)
+
+
+def plot_on_regular_grid(data_file, data_directory, parameter_container, model, figure_path):
+    X_star, t_star, r_star = get_mesh_embedded_in_regular_grid(data_file, data_directory, parameter_container)
+
+    x_star = X_star[:, 0:1]
+    y_star = X_star[:, 1:2]
+
+    t_star = t_star * 0 + parameter_container.get_t()
+    r_star = r_star * 0 + parameter_container.get_r()
+    u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star, r_star)
+
+    p = multiprocessing.Process(target=_do_plot,
+                                args=(parameter_container, X_star, u_pred, p_pred, figure_path))
+    p.start()
+    # p.join()
+    # print("exit code was:", p.exitcode)
 
     return
 
