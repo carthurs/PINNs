@@ -137,17 +137,31 @@ def get_mesh_embedded_in_regular_grid(mesh_filename, cached_data_dir, parameter_
 
 
 def _do_plot(parameter_container, X_star, u_pred, p_pred, figure_path):
-    plot_title = "Predicted Velocity U t {} r {} max observed {}".format(parameter_container.get_t(),
-                                                                         parameter_container.get_r(),
-                                                                         np.max(u_pred))
+    stringify_and_shorten = lambda s: str(s)[0:5]
+    short_t_string = stringify_and_shorten(parameter_container.get_t())
+    short_r_string = stringify_and_shorten(parameter_container.get_r())
+
+    short_max_velocity_string = stringify_and_shorten(np.max(u_pred))
+    short_min_velocity_string = stringify_and_shorten(np.min(u_pred))
+
+    plot_title = "Predicted Velocity U t {} r {} max {} min {}".format(short_t_string,
+                                                                       short_r_string,
+                                                                       short_max_velocity_string,
+                                                                       short_min_velocity_string)
+
     NavierStokes.plot_solution(X_star, u_pred, plot_title, relative_or_absolute_folder_path=figure_path)
 
     logger = logging.getLogger('SelfTeachingDriver')
     logger.info("plotting with title {}".format(plot_title))
 
-    plot_title = "Predicted Pressure Parameter t {} r {} max observed {}".format(parameter_container.get_t(),
-                                                                                 parameter_container.get_r(),
-                                                                                 np.max(p_pred))
+    short_max_pressure_string = stringify_and_shorten(np.max(p_pred))
+    short_min_pressure_string = stringify_and_shorten(np.min(p_pred))
+
+    plot_title = "Predicted Pressure Parameter t {} r {} max {} min {}".format(short_t_string,
+                                                                               short_r_string,
+                                                                               short_max_pressure_string,
+                                                                               short_min_pressure_string)
+
     NavierStokes.plot_solution(X_star, p_pred, plot_title, relative_or_absolute_folder_path=figure_path)
 
 

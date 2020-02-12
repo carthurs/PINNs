@@ -475,14 +475,14 @@ def plot_graph(x_data, y_data, title, scatter_x=None, scatter_y=None, savefile_n
 
     if scatter_x is not None and scatter_y is not None:
         plt.subplot(1, number_of_columns, 1)
-        plt.scatter(scatter_x, scatter_y)
+        plt.scatter(scatter_x, scatter_y, c='red')
         if second_y_data is not None:
             plt.subplot(1, number_of_columns, 2)
             boundary_loss_interpolator = scipy.interpolate.interp1d(x_data, second_y_data)
-            plt.scatter(scatter_x, boundary_loss_interpolator(scatter_x))
+            plt.scatter(scatter_x, boundary_loss_interpolator(scatter_x), c='red')
             plt.subplot(1, number_of_columns, 3)
             total_loss_interpolator = scipy.interpolate.interp1d(x_data, loss_sum)
-            plt.scatter(scatter_x, total_loss_interpolator(scatter_x))
+            plt.scatter(scatter_x, total_loss_interpolator(scatter_x), c='red')
 
     if savefile_nametag is not None:
         title += savefile_nametag
