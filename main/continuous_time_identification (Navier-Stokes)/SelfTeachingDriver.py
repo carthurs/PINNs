@@ -82,9 +82,9 @@ if __name__ == '__main__':
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
     training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.3)
-    test_mode = True
+    test_mode = False
     if not test_mode:
-        num_training_iterations = 20000
+        num_training_iterations = 200000
         max_optimizer_iterations = 50000
         parameter_range_start = 0.0
         parameter_range_end = 1.0

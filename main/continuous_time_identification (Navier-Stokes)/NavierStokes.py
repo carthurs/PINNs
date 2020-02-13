@@ -143,7 +143,7 @@ class PhysicsInformedNN:
         #                                     tf.where(tf.math.greater(self.y_tf, 9.999), self.u_pred + self.v_pred,
         #                                              zero)))
 
-        navier_stokes_loss_scaling = 10000
+        navier_stokes_loss_scaling = 1000
         if self.p_reference_point is not None:
             self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zeros, self.u_tf - self.u_pred))) + \
                                  tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zeros, self.v_tf - self.v_pred)))
