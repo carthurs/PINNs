@@ -143,7 +143,7 @@ class PhysicsInformedNN:
         #                                     tf.where(tf.math.greater(self.y_tf, 9.999), self.u_pred + self.v_pred,
         #                                              zero)))
 
-        navier_stokes_loss_scaling = 100
+        navier_stokes_loss_scaling = 10000
         if self.p_reference_point is not None:
             self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zeros, self.u_tf - self.u_pred))) + \
                                  tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zeros, self.v_tf - self.v_pred)))
@@ -550,6 +550,49 @@ def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_tra
         logger.error(error_message)
 
 
+def evaluate_solution(model, plot_lots, test_data, true_density_value, true_viscosity_value):
+
+    r_test = test_data['r']
+    u_test = test_data['u']
+    v_test = test_data['v']
+    X_star = test_data['X_star']  # TODO this is somewhat redundant; X_star and (X_test and Y_test) contain the same data. Refactor.
+    X_test = test_data['x']
+    Y_test = test_data['y']
+    t_test = test_data['t']
+    p_test = test_data['p']
+
+    # Prediction
+    u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test, r_test)
+    lambda_1_value = model.sess.run(model.lambda_1)
+    lambda_2_value = model.sess.run(model.lambda_2)
+
+    # Error
+    errors = dict()
+    errors['error_u'] = np.linalg.norm(u_test - u_pred, 2) / np.linalg.norm(u_test, 2)
+    errors['error_v'] = np.linalg.norm(v_test - v_pred, 2) / np.linalg.norm(v_test, 2)
+    errors['error_p'] = np.linalg.norm(np.squeeze(p_test) - p_pred, 2) / np.linalg.norm(p_test, 2)
+
+    error_lambda_1 = np.abs(lambda_1_value - true_density_value) / true_density_value * 100
+    error_lambda_2 = np.abs(lambda_2_value - true_viscosity_value) / true_viscosity_value * 100
+
+    # print('Error u: %e' % (error_u))
+    # print('Error v: %e' % (error_v))
+    # print('Error p: %e' % (error_p))
+    # print('Error l1: %.5f%%' % (error_lambda_1))
+    # print('Error l2: %.5f%%' % (error_lambda_2))
+    # print(lambda_1_value, lambda_2_value)
+
+    # Plot Results
+    # plot_solution(X_star, u_pred, "Predicted Velocity U")
+    # plot_solution(X_star, v_pred, "Predicted Velocity V")
+    # plot_solution(X_star, p_pred, "Predicted Pressure")
+    # plot_solution(X_star, p_test, "True Pressure")
+    # plot_solution(X_star, p_test[:, 0] - p_pred, "Pressure Error")
+    # plot_solution(X_star, psi_pred, "Psi")
+
+    return errors
+
+
 def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, number_of_training_iterations,
                    use_pressure_node_in_training, number_of_hidden_layers, max_optimizer_iterations_in,
                    N_train_specifier, load_existing_model=False, additional_simulation_data=None, parent_logger=None,
@@ -600,7 +643,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         #                                            ).get_pinns_format_input_data()
 
         data_reader = VtkDataReader.MultipleFileReader(data_caching_directory, mode='unstructured')
-        base_base_data_directory = r'/home/chris/WorkData/nektar++/actual/'
+        # base_base_data_directory = r'/home/chris/WorkData/nektar++/actual/'
         # file_names_and_parameter_values = [(data_directory + vtu_data_file_name, 1.0),
         #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_doubleInflow/' + vtu_data_file_name, 2.0),
         #                                    (base_base_data_directory + r'tube_10mm_diameter_pt2Mesh_correctViscosity_1pt5Inflow/' + vtu_data_file_name, 1.5),
@@ -661,11 +704,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         X_test = test_data['x']
         Y_test = test_data['y']
         t_test = test_data['t']
-        r_test = test_data['r']
-        u_test = test_data['u']
-        v_test = test_data['v']
         p_test = test_data['p']
-        bc_codes_test = test_data['bc_codes']
 
         if use_pressure_node_in_training:
             # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
@@ -705,53 +744,42 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
             train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
                                    t_test, pickled_model_filename_out, saved_tf_model_filename_out)
 
-        # Prediction
-        if plot_lots:
-            for t_parameter in [1, 1.5, 2, 2.5, 3, 4, 3.5, 4.5, 2.2, 1.1, 0.5, -0.5, 5.0, 0.0]:
-                t_test = t_test * 0 + t_parameter
-                u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test, r_test)
-                plot_title = "Predicted Velocity U Parameter {} max observed {}".format(t_parameter, np.max(u_pred))
-                plot_solution(X_star, u_pred, plot_title)
+        gathered_errors_u = dict()
+        gathered_errors_v = dict()
+        gathered_errors_p = dict()
 
-                plot_title = "Predicted Pressure Parameter {} max observed {}".format(t_parameter, np.max(p_pred))
-                plot_solution(X_star, p_pred, plot_title)
+        for parameter_container, evaluation_test_data in data_reader.get_test_data_over_all_known_files_generator():
+            computed_errors = evaluate_solution(model, plot_lots, evaluation_test_data, true_density_value, true_viscosity_value)
+            gathered_errors_u[parameter_container] = computed_errors['error_u']
+            gathered_errors_v[parameter_container] = computed_errors['error_v']
+            gathered_errors_p[parameter_container] = computed_errors['error_p']
 
-        t_test = t_test * 0 + 1.0
-        r_test = r_test * 0 + 1.0
-        u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test, r_test)
-        lambda_1_value = model.sess.run(model.lambda_1)
-        lambda_2_value = model.sess.run(model.lambda_2)
+        gathered_errors_u_list = []
+        for index, key in enumerate(gathered_errors_u):
+            gathered_errors_u_list.append(gathered_errors_u[key])
+            parent_logger.info('gathered errors u axis label {} = {}'.format(index, key))
 
-        # Error
-        error_u = np.linalg.norm(u_test-u_pred, 2)/np.linalg.norm(u_test, 2)
-        error_v = np.linalg.norm(v_test-v_pred, 2)/np.linalg.norm(v_test, 2)
-        error_p = np.linalg.norm(np.squeeze(p_test)-p_pred, 2)
-        error_p = error_p/np.linalg.norm(p_test, 2)
+        gathered_errors_v_list = []
+        for key in gathered_errors_v:
+            gathered_errors_v_list.append(gathered_errors_v[key])
 
-        error_lambda_1 = np.abs(lambda_1_value - true_density_value)/true_density_value*100
-        error_lambda_2 = np.abs(lambda_2_value - true_viscosity_value)/true_viscosity_value * 100
+        gathered_errors_p_list = []
+        for key in gathered_errors_p:
+            gathered_errors_p_list.append(gathered_errors_p[key])
 
-        print('Error u: %e' % (error_u))
-        print('Error v: %e' % (error_v))
-        print('Error p: %e' % (error_p))
-        print('Error l1: %.5f%%' % (error_lambda_1))
-        print('Error l2: %.5f%%' % (error_lambda_2))
-        print(lambda_1_value, lambda_2_value)
+        if max(gathered_errors_u_list) != min(gathered_errors_u_list):
+            plot_graph(range(len(gathered_errors_u_list)), gathered_errors_u_list, 'gathered errors u list')
+        if max(gathered_errors_v_list) != min(gathered_errors_v_list):
+            plot_graph(range(len(gathered_errors_v_list)), gathered_errors_v_list, 'gathered errors v list')
+        if max(gathered_errors_p_list) != min(gathered_errors_p_list):
+            plot_graph(range(len(gathered_errors_p_list)), gathered_errors_p_list, 'gathered errors p list')
 
-        # Plot Results
-        plot_solution(X_star, u_pred, "Predicted Velocity U")
-        plot_solution(X_star, v_pred, "Predicted Velocity V")
-        plot_solution(X_star, p_pred, "Predicted Pressure")
-        plot_solution(X_star, p_test, "True Pressure")
-        plot_solution(X_star, p_test[:, 0] - p_pred, "Pressure Error")
-        plot_solution(X_star, psi_pred, "Psi")
+        # np.savetxt('loss_history_{}_{}.dat'.format(number_of_training_iterations, model.get_max_optimizer_iterations()), model.getLossHistory())
+        #
+        # np.savetxt("p_pred_saved.dat", p_pred)
+        # np.savetxt("X_star_saved.dat", X_star)
 
-        np.savetxt('loss_history_{}_{}.dat'.format(number_of_training_iterations, model.get_max_optimizer_iterations()), model.getLossHistory())
-
-        np.savetxt("p_pred_saved.dat", p_pred)
-        np.savetxt("X_star_saved.dat", X_star)
-
-        print("Pressure at 2nd node: True: {}, Predicted: {}, Difference: {}". format(p_test[0], p_pred[0], p_test[0]-p_pred[0]))
+        # print("Pressure at 2nd node: True: {}, Predicted: {}, Difference: {}". format(p_test[0], p_pred[0], p_test[0]-p_pred[0]))
 
         # Predict for plotting
         lb = X_star.min(0)
@@ -761,10 +789,10 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         y = np.linspace(lb[1], ub[1], nn)
         X, Y = np.meshgrid(x,y)
 
-        UU_star = griddata(X_star, u_pred.flatten(), (X, Y), method='cubic')
-        VV_star = griddata(X_star, v_pred.flatten(), (X, Y), method='cubic')
-        PP_star = griddata(X_star, p_pred.flatten(), (X, Y), method='cubic')
-        P_exact = griddata(X_star, p_test.flatten(), (X, Y), method='cubic')
+        # UU_star = griddata(X_star, u_pred.flatten(), (X, Y), method='cubic')
+        # VV_star = griddata(X_star, v_pred.flatten(), (X, Y), method='cubic')
+        # PP_star = griddata(X_star, p_pred.flatten(), (X, Y), method='cubic')
+        # P_exact = griddata(X_star, p_test.flatten(), (X, Y), method='cubic')
 
         if do_noisy_data_case:
             ######################################################################

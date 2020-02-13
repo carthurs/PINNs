@@ -1,5 +1,6 @@
 import NektarDriver
 import NavierStokes
+import ConfigManager
 import matplotlib
 matplotlib.use('Agg')
 from NavierStokes import PhysicsInformedNN
@@ -62,16 +63,13 @@ if __name__ == '__main__':
 
     logger = create_logger()
     logger.info("=============== Starting SelfTeachingDriver.py ===============")
+    config_manager = ConfigManager.ConfigManager()
 
-    nektar_data_root_path = r'/home/chris/WorkData/nektar++/actual/bezier/'
-    # nektar_data_root_path = r'/home/chris/WorkData/nektar++/actual/coarser/'
+    nektar_data_root_path = config_manager.get_nektar_data_root_path()
     reference_data_subfolder = r'basic'
-    # reference_data_subfolder = r'tube_10mm_diameter_1pt0Mesh_correctViscosity'
     simulation_subfolder_template = reference_data_subfolder + r'_t{}_r{}/'
-    master_model_data_root_path = r'/home/chris/WorkData/nektar++/actual/bezier/master_data/'
-    # master_model_data_root_path = r'/home/chris/workspace/PINNs/PINNs/main/continuous_time_identification (Navier-Stokes)'
+    master_model_data_root_path = config_manager.get_master_model_data_root_path()
     vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
-    # vtu_file_name = 'tube10mm_diameter_1pt0mesh'
     reference_vtu_filename_template = nektar_data_root_path + simulation_subfolder_template + \
                                         vtu_and_xml_file_basename + '.vtu'
 
@@ -84,7 +82,7 @@ if __name__ == '__main__':
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
     training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.3)
-    test_mode = False
+    test_mode = True
     if not test_mode:
         num_training_iterations = 20000
         max_optimizer_iterations = 50000

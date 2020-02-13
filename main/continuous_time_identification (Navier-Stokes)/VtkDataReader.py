@@ -378,6 +378,10 @@ class MultipleFileReader(object):
     def get_training_data(self):
         return self.gathered_data
 
+    def get_test_data_over_all_known_files_generator(self):
+        for parameter_container_key in self.file_names_by_parameter_values:
+            yield parameter_container_key, self.get_test_data(parameter_container_key)
+
     def get_test_data(self, parameters_container_for_test):
         # Might want to switch this name out for  something passed in instead. Currently we're just evaluating on
         # a full space-time slice from which we've sampled training data (which is why its file name is in the
@@ -423,7 +427,7 @@ if __name__ == '__main__':
     #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu')
 
     param_container = SPM.SimulationParameterContainer(1.0, 0.6666)
-    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0_r0.0/tube_bezier_1pt0mesh.vtu', param_container,
+    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.3333333333333333_r0.6666666666666666/tube_bezier_1pt0mesh_using_points_from_xml.vtu', param_container,
                               None)
 
     # my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0_r1.0/tube_bezier_1pt0mesh.vtu',

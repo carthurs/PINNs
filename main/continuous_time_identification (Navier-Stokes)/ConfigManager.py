@@ -9,6 +9,8 @@ class ConfigManager(object):
     COMPOSITE_IDS_NOSLIP = 'composite_ids_for_noslip'
     COMPOSITE_IDS_INFLOW = 'composite_ids_for_inflow'
     COMPOSITE_IDS_OUTFLOW = 'composite_ids_for_outflow'
+    NEKTAR_DATA_ROOT_PATH = 'nektar_data_root_path'
+    MASTER_MODEL_DATA_ROOT_PATH = 'master_model_data_root_path'
 
     def __init__(self):
         with open('config.json', 'r') as infile:
@@ -39,3 +41,9 @@ class ConfigManager(object):
 
     def get_composite_ids_outflow(self):
         return self._get_list_of_ints_as_ints(ConfigManager.COMPOSITE_IDS_OUTFLOW)
+
+    def get_nektar_data_root_path(self):
+        return self.config_data[ConfigManager.NEKTAR_DATA_ROOT_PATH]
+
+    def get_master_model_data_root_path(self):
+        return self.config_data[ConfigManager.MASTER_MODEL_DATA_ROOT_PATH]
