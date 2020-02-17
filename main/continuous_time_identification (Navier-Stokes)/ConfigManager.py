@@ -11,6 +11,7 @@ class ConfigManager(object):
     COMPOSITE_IDS_OUTFLOW = 'composite_ids_for_outflow'
     NEKTAR_DATA_ROOT_PATH = 'nektar_data_root_path'
     MASTER_MODEL_DATA_ROOT_PATH = 'master_model_data_root_path'
+    GMSH_PATH = 'gmsh_path'
 
     def __init__(self):
         with open('config.json', 'r') as infile:
@@ -47,3 +48,6 @@ class ConfigManager(object):
 
     def get_master_model_data_root_path(self):
         return self.config_data[ConfigManager.MASTER_MODEL_DATA_ROOT_PATH]
+
+    def get_gmsh_exe(self):
+        return self.config_data[ConfigManager.GMSH_PATH]

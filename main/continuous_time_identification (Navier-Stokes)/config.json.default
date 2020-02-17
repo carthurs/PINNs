@@ -7,5 +7,6 @@
   "composite_ids_for_inflow": ["-3"],
   "composite_ids_for_outflow": ["-4"]
   "nektar_data_root_path": "/home/chris/WorkData/nektar++/actual/bezier/",
-  "master_model_data_root_path": "/home/chris/WorkData/nektar++/actual/bezier/master_data/"
+  "master_model_data_root_path": "/home/chris/WorkData/nektar++/actual/bezier/master_data/",
+  "gmsh_path": "gmsh"
 }

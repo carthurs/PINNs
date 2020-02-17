@@ -55,6 +55,10 @@ def array_extending_insert(array, index, value):
 
     return array
 
+def log_message(message):
+    logger = logging.getLogger('SelfTeachingDriver')
+    logger.error(message)
+
 class PhysicsInformedNN:
     def __getstate__(self):
         odict = self.__dict__.copy()
@@ -546,8 +550,7 @@ def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_tra
     except TypeError as e:
         error_message = "Error pickling model: model not saved!"
         print(error_message, e)
-        logger = logging.getLogger('SelfTeachingDriver')
-        logger.error(error_message)
+        log_message(error_message)
 
 
 def evaluate_solution(model, plot_lots, test_data, true_density_value, true_viscosity_value):
@@ -571,6 +574,7 @@ def evaluate_solution(model, plot_lots, test_data, true_density_value, true_visc
     errors['error_u'] = np.linalg.norm(u_test - u_pred, 2) / np.linalg.norm(u_test, 2)
     errors['error_v'] = np.linalg.norm(v_test - v_pred, 2) / np.linalg.norm(v_test, 2)
     errors['error_p'] = np.linalg.norm(np.squeeze(p_test) - p_pred, 2) / np.linalg.norm(p_test, 2)
+    log_message('Computed errors were: {}'.format(errors))
 
     error_lambda_1 = np.abs(lambda_1_value - true_density_value) / true_density_value * 100
     error_lambda_2 = np.abs(lambda_2_value - true_viscosity_value) / true_viscosity_value * 100

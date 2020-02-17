@@ -114,7 +114,7 @@ class NektarDriver(object):
                 os.path.join(os.getcwd(), self.mesh_xml_file_name)))
         else:
             substitute_text_in_file('untitled.geo', 'curving_param = 20.0', 'curving_param = {}'.format(domain_shape_parameter))
-            meshing_process_outcome = subprocess.run(['gmsh', 'untitled.geo', '-2'])
+            meshing_process_outcome = subprocess.run([self.config_manager.get_gmsh_exe(), 'untitled.geo', '-2'])
             self.logger.info('Return code of gmsh call was {}.'.format(meshing_process_outcome.returncode))
 
             subprocess.run(

@@ -74,9 +74,9 @@ if __name__ == '__main__':
                                         vtu_and_xml_file_basename + '.vtu'
 
     use_pressure_node_in_training = True
-    number_of_hidden_layers = 8
+    number_of_hidden_layers = 4
 
-    starting_index = 0
+    starting_index = 4
     ending_index = 100
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
