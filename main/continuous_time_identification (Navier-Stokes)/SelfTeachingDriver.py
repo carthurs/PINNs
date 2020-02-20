@@ -76,15 +76,15 @@ if __name__ == '__main__':
     use_pressure_node_in_training = True
     number_of_hidden_layers = 4
 
-    starting_index = 4
+    starting_index = 0
     ending_index = 100
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
-    training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.3)
+    training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.99)
     test_mode = False
     if not test_mode:
-        num_training_iterations = 200000
+        num_training_iterations = 20000
         max_optimizer_iterations = 50000
         parameter_range_start = 0.0
         parameter_range_end = 1.0
@@ -134,7 +134,7 @@ if __name__ == '__main__':
         if new_data_iteration == 0:
             # If this is the first iteration, no data is available yet, so we just work with the parameter at the
             # midpoint of the parameter range of interest.
-            parameters_container = parameter_manager.get_midpoint_parameters()
+            parameters_container = parameter_manager.get_initial_parameters()
             start_from_existing_model = False
         else:
             logger.info('Will load tensorflow file {}'.format(saved_tf_model_filename.format(input_data_save_file_tag)))

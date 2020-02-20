@@ -11,7 +11,7 @@ class SimulationParameterContainer(object):
         self.__t = t
         self.__r = r
         content_based_id_string = 'r={},t={}'.format(r, t)
-        self.content_derived_id = int(hashlib.md5(content_based_id_string.encode('utf-8')).hexdigest(), 16)
+        self.content_derived_id = int(hashlib.sha256(content_based_id_string.encode('utf-8')).hexdigest(), 16)
 
     def get_t(self):
         return self.__t
@@ -69,9 +69,12 @@ class SimulationParameterManager(object):
         for r in self.__parameter_space:
             yield r
 
-    def get_midpoint_parameters(self):
-        t_mid = self.flat_t_space[int(len(self.flat_t_space) / 2)]
-        r_mid = self.flat_r_space[int(len(self.flat_r_space) / 2)]
+    def get_initial_parameters(self):
+        # t_mid = self.flat_t_space[int(len(self.flat_t_space) / 2)]
+        # r_mid = self.flat_r_space[int(len(self.flat_r_space) / 2)]
+
+        t_mid = self.flat_t_space[-1]
+        r_mid = self.flat_r_space[-1]
 
         return SimulationParameterContainer(t_mid, r_mid)
 

@@ -57,7 +57,7 @@ def array_extending_insert(array, index, value):
 
 def log_message(message):
     logger = logging.getLogger('SelfTeachingDriver')
-    logger.error(message)
+    logger.info(message)
 
 class PhysicsInformedNN:
     def __getstate__(self):
@@ -148,11 +148,13 @@ class PhysicsInformedNN:
         #                                              zero)))
 
         navier_stokes_loss_scaling = 1000
+
+        self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zeros, self.u_tf - self.u_pred))) + \
+                             tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zeros, self.v_tf - self.v_pred)))
+        self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
+                                  tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
+
         if self.p_reference_point is not None:
-            self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zeros, self.u_tf - self.u_pred))) + \
-                                 tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zeros, self.v_tf - self.v_pred)))
-            self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
-                                      tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
             self.loss_pressure_node = tf.square(self.p_at_first_node[0] - self.p_reference_point[3])
 
             # loss_t_gradient = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*psi_t_pred)) +\
@@ -165,10 +167,6 @@ class PhysicsInformedNN:
             self.loss = self.loss_velocity + self.loss_navier_stokes + \
                         self.loss_pressure_node + self.loss_boundary_conditions * navier_stokes_loss_scaling**2
         else:
-            self.loss_velocity = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
-                                 tf.reduce_sum(tf.square(self.v_tf - self.v_pred))
-            self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
-                                      tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
             self.loss = self.loss_velocity + self.loss_navier_stokes + self.loss_boundary_conditions * navier_stokes_loss_scaling**2
 
         self.loss_summary = tf.summary.scalar("loss", self.loss)
@@ -185,7 +183,7 @@ class PhysicsInformedNN:
         self.other_summary_scalars.append(tf.summary.scalar("v_xx", tf.reduce_mean(self.loss_pieces_out[3])))
         self.other_summary_scalars.append(tf.summary.scalar("v_yy", tf.reduce_mean(self.loss_pieces_out[4])))
 
-        self.optimizer_Adam = tf.train.AdamOptimizer()
+        self.optimizer_Adam = tf.train.AdamOptimizer(learning_rate=0.0001)
         self.train_op_Adam = self.optimizer_Adam.minimize(self.loss)
 
         init = tf.global_variables_initializer()
@@ -334,8 +332,11 @@ class PhysicsInformedNN:
 
         # run the NN a second time on the first node (at x=1, y=-2, t=0) to get a reference pressure whose value we can
         # target in order to control the pressure field's absolute values;
-        psi_and_p_ignore_psi = self.neural_net(tf.constant(self.p_reference_point[0:3], shape=(1, 4)), self.weights, self.biases)
-        self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
+        if self.p_reference_point is not None:
+            psi_and_p_ignore_psi = self.neural_net(tf.constant(self.p_reference_point[0:3], shape=(1, 4)), self.weights, self.biases)
+            self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
+        else:
+            self.p_at_first_node = tf.constant([-1.0])
 
         return u, v, p, f_u, f_v, psi, self.p_at_first_node, loss_pieces  #, psi_t, p_t
 
@@ -636,7 +637,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         true_density_value = 0.00106  # 1.0
         # number_of_training_iterations = 100000  # 200000
 
-        layers = [4] + [20] * number_of_hidden_layers + [3]
+        layers = [4] + [40] * number_of_hidden_layers + [3]
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
         # Load Data
@@ -708,11 +709,11 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         X_test = test_data['x']
         Y_test = test_data['y']
         t_test = test_data['t']
-        p_test = test_data['p']
+        r_test = test_data['r']
 
         if use_pressure_node_in_training:
             # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
-            p_single_reference_node = list(map(lambda x: x.item(), [X_test[0], Y_test[0], t_test[0], p_test[0]]))
+            p_single_reference_node = list(map(lambda x: x.item(), [X_test[0], Y_test[0], t_test[0], r_test[0]]))
         else:
             p_single_reference_node = None
 
@@ -760,16 +761,16 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
 
         gathered_errors_u_list = []
         for index, key in enumerate(gathered_errors_u):
-            gathered_errors_u_list.append(gathered_errors_u[key])
+            gathered_errors_u_list.append(abs(gathered_errors_u[key]))
             parent_logger.info('gathered errors u axis label {} = {}'.format(index, key))
 
         gathered_errors_v_list = []
         for key in gathered_errors_v:
-            gathered_errors_v_list.append(gathered_errors_v[key])
+            gathered_errors_v_list.append(abs(gathered_errors_v[key]))
 
         gathered_errors_p_list = []
         for key in gathered_errors_p:
-            gathered_errors_p_list.append(gathered_errors_p[key])
+            gathered_errors_p_list.append(abs(gathered_errors_p[key]))
 
         if max(gathered_errors_u_list) != min(gathered_errors_u_list):
             plot_graph(range(len(gathered_errors_u_list)), gathered_errors_u_list, 'gathered errors u list')
