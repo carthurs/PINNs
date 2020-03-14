@@ -77,7 +77,7 @@ if __name__ == '__main__':
     number_of_hidden_layers = 4
 
     starting_index = 0
-    ending_index = 100
+    ending_index = 200
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
@@ -86,8 +86,8 @@ if __name__ == '__main__':
     if not test_mode:
         num_training_iterations = 20000
         max_optimizer_iterations = 50000
-        parameter_range_start = 0.0
-        parameter_range_end = 1.0
+        parameter_range_start = -2.0
+        parameter_range_end = 2.0
     else:
         num_training_iterations = 20
         max_optimizer_iterations = 50
