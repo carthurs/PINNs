@@ -2,16 +2,15 @@
 @author: Maziar Raissi, Chris Arthurs
 """
 import sys
-sys.path.insert(0, '../../Utilities/')
 
 import os
+import os.path
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 tf.get_logger().setLevel('INFO')
 tf.autograph.set_verbosity(1)
 tf.logging.set_verbosity(tf.logging.ERROR)
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-from tensorflow.python import debug as tf_debug
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -19,12 +18,6 @@ import matplotlib.pyplot as plt
 import scipy.io
 from scipy.interpolate import griddata
 import time
-from itertools import product, combinations
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from plotting import newfig, savefig  # this is the thing in the Utilities subfolder (added above to the sys path) - NOT a 3rd party module
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-import matplotlib.gridspec as gridspec
 import pickle
 import ttictoc
 import tqdm
@@ -35,6 +28,7 @@ import VtkDataReader
 import BoundaryConditionCodes as BC
 import SimulationParameterManager as SPM
 import logging
+import ConfigManager
 
 # np.random.seed(1234)
 # tf.set_random_seed(1234)
@@ -350,7 +344,7 @@ class PhysicsInformedNN:
         print('(A) Loss: %.3e, l1: %.3f, l2: %.5f (%f/%f)' % (loss, lambda_1, lambda_2,
                                                               self.iteration_counter, self.max_optimizer_iterations))
 
-    def train(self, nIter, summary_writer, x_predict, y_predict, t_predict):
+    def train_model(self, nIter, summary_writer, x_predict, y_predict, t_predict, savefile_tag=None):
 
         tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t, self.r_tf: self.r,
                    self.u_tf: self.u, self.v_tf: self.v, self.bc_codes_tf: self.bc_codes}
@@ -359,7 +353,7 @@ class PhysicsInformedNN:
         self.loss_history_write_index = 0
 
         start_time = time.time()
-        for it in tqdm.tqdm(range(nIter), desc='[Training...]'):
+        for it in tqdm.tqdm(range(nIter), desc='[Training (Param. set I.D. = {})...]'.format(savefile_tag)):
             self.sess.run(self.train_op_Adam, tf_dict)
 
             # Print
@@ -516,6 +510,8 @@ def plot_solution(X_star, u_star, title, colour_range=(None, None), relative_or_
     figure_savefile = title.replace(" ", "_") + '.png'
     if relative_or_absolute_folder_path is not None:
         figure_savefile = relative_or_absolute_folder_path + figure_savefile
+        if not os.path.exists(relative_or_absolute_folder_path):
+            os.mkdir(relative_or_absolute_folder_path)
     plt.savefig(figure_savefile)
     plt.close()
 
@@ -531,10 +527,10 @@ def axisEqual3D(ax):
 
 
 def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_training_iterations_in, x_star_in, y_star_in,
-                           t_star_in, pickled_model_filename_in, saved_tf_model_filename_in):
+                           t_star_in, pickled_model_filename_in, saved_tf_model_filename_in, savefile_tag_in):
     summary_writer = tf.summary.FileWriter(tensorboard_log_directory_in, tf.get_default_graph())
 
-    model_in.train(number_of_training_iterations_in, summary_writer, x_star_in, y_star_in, t_star_in)
+    model_in.train_model(number_of_training_iterations_in, summary_writer, x_star_in, y_star_in, t_star_in, savefile_tag_in)
 
     summary_writer.flush()
     summary_writer.close()
@@ -554,7 +550,40 @@ def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_tra
         log_message(error_message)
 
 
-def evaluate_solution(model, plot_lots, test_data, true_density_value, true_viscosity_value):
+def _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in):
+    tf.reset_default_graph()
+    with open(pickled_model_filename, 'rb') as pickled_model_file:
+        loaded_model = pickle.load(pickled_model_file)
+        loaded_model.set_max_optimizer_iterations(max_optimizer_iterations_in)
+
+    loaded_model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
+                                                  log_device_placement=False))
+
+    tf.train.Saver().restore(loaded_model.sess, saved_tf_model_filename)
+    return loaded_model
+
+
+def load_and_evaluate_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in,
+                            true_density_value, true_viscosity_value, test_vtu_filename, test_parameters_container):
+
+    config_manager = ConfigManager.ConfigManager()
+    master_model_data_root_path = config_manager.get_master_model_data_root_path()
+
+    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
+
+    my_multiple_vtk_file_reader = VtkDataReader.MultipleFileReader(master_model_data_root_path, mode='unstructured')
+
+    my_multiple_vtk_file_reader.add_file_name(test_vtu_filename,
+                                              test_parameters_container)
+    test_data = my_multiple_vtk_file_reader.get_test_data(test_parameters_container)
+
+    errors_out = evaluate_solution(model, test_data, true_density_value, true_viscosity_value)
+
+    print("errors_out:", errors_out)
+    return errors_out
+
+
+def evaluate_solution(model, test_data, true_density_value, true_viscosity_value):
 
     r_test = test_data['r']
     u_test = test_data['u']
@@ -605,6 +634,9 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
 
     tensorboard_log_directory_base = '{}/logs'.format(data_caching_directory)
 
+    if not os.path.exists(tensorboard_log_directory_base):
+        os.mkdir(tensorboard_log_directory_base)
+
     # Warning: this assumes that the only contents of the logs directory is subdirs with integer names.
     integer_log_subdir_names = [int(filename) for filename in os.listdir(tensorboard_log_directory_base)]
     try:
@@ -637,7 +669,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         true_density_value = 0.00106  # 1.0
         # number_of_training_iterations = 100000  # 200000
 
-        layers = [4] + [40] * number_of_hidden_layers + [3]
+        layers = [4] + [80] * number_of_hidden_layers + [3]
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
         # Load Data
@@ -723,22 +755,14 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         saved_tf_model_filename_out = input_saved_model_template.format(savefile_tag + 1)
 
         if load_existing_model:
-            tf.reset_default_graph()
-            with open(pickled_model_filename, 'rb') as pickled_model_file:
-                model = pickle.load(pickled_model_file)
-                model.set_max_optimizer_iterations(max_optimizer_iterations_in)
-
-            model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                         log_device_placement=False))
-
-            tf.train.Saver().restore(model.sess, saved_tf_model_filename)
+            model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
 
             # model.call_just_LBGDSF_optimizer()
             if train_model_further_with_new_data:
                 model.reset_training_data(x_train, y_train, t_train, r_train, u_train, v_train, bc_codes_train)
 
                 train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
-                                       t_test, pickled_model_filename_out, saved_tf_model_filename_out)
+                                       t_test, pickled_model_filename_out, saved_tf_model_filename_out, savefile_tag)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, r_train, u_train, v_train, bc_codes_train, layers,
@@ -747,14 +771,14 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
                                       max_optimizer_iterations_in)
 
             train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
-                                   t_test, pickled_model_filename_out, saved_tf_model_filename_out)
+                                   t_test, pickled_model_filename_out, saved_tf_model_filename_out, savefile_tag)
 
         gathered_errors_u = dict()
         gathered_errors_v = dict()
         gathered_errors_p = dict()
 
         for parameter_container, evaluation_test_data in data_reader.get_test_data_over_all_known_files_generator():
-            computed_errors = evaluate_solution(model, plot_lots, evaluation_test_data, true_density_value, true_viscosity_value)
+            computed_errors = evaluate_solution(model, evaluation_test_data, true_density_value, true_viscosity_value)
             gathered_errors_u[parameter_container] = computed_errors['error_u']
             gathered_errors_v[parameter_container] = computed_errors['error_v']
             gathered_errors_p[parameter_container] = computed_errors['error_p']
@@ -809,7 +833,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
 
             # Training
             # model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-            model.train(number_of_training_iterations)  # 200000
+            model.train_model(number_of_training_iterations)  # 200000
 
             lambda_1_value_noisy = model.sess.run(model.lambda_1)
             lambda_2_value_noisy = model.sess.run(model.lambda_2)

@@ -10,6 +10,7 @@ import sys
 import tqdm
 import SimulationParameterManager as SPM
 import multiprocessing
+import ConfigManager
 
 if sys.platform.lower() == "win32":
     os.system('color')
@@ -301,13 +302,35 @@ if __name__ == '__main__':
     plot_all_figures = True
     # saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
     # pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
-    model_index_to_load = 6
+    model_index_to_load = 45
     data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data/'
     saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
     pickled_model_filename = os.path.join(data_root, 'saved_model_{}.pickle'.format(model_index_to_load))
 
-    parameter_manager = SPM.SimulationParameterManager(0.0, 6.0, 61)
+    parameter_range_start = -2.0
+    parameter_range_end = 2.0
+    number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 3) + 1
 
-    t_parameter_linspace = np.linspace(0.0, 6.0, num=61)
-    compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, parameter_manager,
-                            data_root)
+    parameter_manager = SPM.SimulationParameterManager(parameter_range_start,
+                                                       parameter_range_end,
+                                                       number_of_parameter_points)
+
+    # t_parameter_linspace = np.linspace(0.0, 6.0, num=61)
+
+    # compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, parameter_manager,
+    #                         data_root)
+
+    plot_lots_in = False
+    true_viscosity_value = 0.004  # 0.01
+    true_density_value = 0.00106  # 1.0
+    max_optimizer_iterations = 50000
+    t = 1.0
+    r = 2.0
+
+    test_parameters_container = SPM.SimulationParameterContainer(t, r)
+    test_vtu_filename = r'/home/chris/WorkData/nektar++/actual/bezier/basic_t{}_r{}/tube_bezier_1pt0mesh_using_points_from_xml.vtu'.format(t, r)
+
+    computed_errors = NavierStokes.load_and_evaluate_model(pickled_model_filename, saved_tf_model_filename,
+                                                           max_optimizer_iterations,
+                                                           true_density_value, true_viscosity_value, test_vtu_filename,
+                                                           test_parameters_container)

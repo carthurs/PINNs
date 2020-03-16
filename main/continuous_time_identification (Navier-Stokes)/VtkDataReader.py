@@ -383,7 +383,7 @@ class MultipleFileReader(object):
             yield parameter_container_key, self.get_test_data(parameter_container_key)
 
     def get_test_data(self, parameters_container_for_test):
-        # Might want to switch this name out for  something passed in instead. Currently we're just evaluating on
+        # Might want to switch this name out for something passed in instead. Currently we're just evaluating on
         # a full space-time slice from which we've sampled training data (which is why its file name is in the
         # dictionary file_names_by_parameter_values).
         file_name = self.file_names_by_parameter_values[parameters_container_for_test]
