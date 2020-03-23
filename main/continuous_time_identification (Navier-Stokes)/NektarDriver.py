@@ -89,11 +89,9 @@ class NektarDriver(object):
                             self.config_manager.get_field_convert_exe(), self.fld_file_name,
                             self.mesh_xml_file_name, self.vtu_file_name]).check_returncode()
 
-
-        # TODO at some point (once existing data is all binned), this can go into the above if-guard
-        VtkDataReader.interpolate_vtu_onto_xml_defined_grid(self.vtu_file_name,
-                                                            self.mesh_xml_file_name,
-                                                            self.vtu_and_xml_file_basename+"_using_points_from_xml.vtu")
+            VtkDataReader.interpolate_vtu_onto_xml_defined_grid(self.vtu_file_name,
+                                                                self.mesh_xml_file_name,
+                                                                self.vtu_and_xml_file_basename+"_using_points_from_xml.vtu")
 
         os.chdir(self.initial_working_path)
 

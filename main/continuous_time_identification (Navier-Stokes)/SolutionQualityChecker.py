@@ -11,6 +11,7 @@ import tqdm
 import SimulationParameterManager as SPM
 import multiprocessing
 import ConfigManager
+import matplotlib.pyplot as plt
 
 if sys.platform.lower() == "win32":
     os.system('color')
@@ -294,7 +295,27 @@ def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_m
                   plot_filename_tag,
                   additional_real_simulation_data_parameters,
                   figure_path='{}/figures_output/'.format(data_dir_in))
+
     return
+
+
+def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile, output_filename_tag=''):
+    with open(sim_dir_and_parameter_tuples_picklefile, 'rb') as infile:
+        sim_dir_and_parameter_tuples = pickle.load(infile)
+
+    scatter_x = [x[1].get_t() for x in sim_dir_and_parameter_tuples]
+    scatter_y = [y[1].get_r() for y in sim_dir_and_parameter_tuples]
+
+    plt.figure(89)
+
+    plt.scatter(scatter_x, scatter_y, c='red')
+    plt.title('Training Parameter Values Used')
+    plt.xlabel('Inflow Parameter')
+    plt.ylabel('Domain Shape Parameter')
+
+    figure_savefile = r'plotted_parameters{}.png'.format(output_filename_tag)
+    plt.savefig(figure_savefile)
+    plt.close()
 
 
 if __name__ == '__main__':
@@ -302,7 +323,7 @@ if __name__ == '__main__':
     plot_all_figures = True
     # saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
     # pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
-    model_index_to_load = 45
+    model_index_to_load = 19
     data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data/'
     saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
     pickled_model_filename = os.path.join(data_root, 'saved_model_{}.pickle'.format(model_index_to_load))
@@ -320,12 +341,20 @@ if __name__ == '__main__':
     # compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_model_filename, parameter_manager,
     #                         data_root)
 
+    config_manager = ConfigManager.ConfigManager()
+    master_model_data_root_path = config_manager.get_master_model_data_root_path()
+    nektar_data_root_path = config_manager.get_nektar_data_root_path()
+    sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
+                                                                    'sim_dir_and_parameter_tuples_{}start.pickle')
+
+    # scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile_basename.format(model_index_to_load))
+
     plot_lots_in = False
     true_viscosity_value = 0.004  # 0.01
     true_density_value = 0.00106  # 1.0
     max_optimizer_iterations = 50000
-    t = 1.0
-    r = 2.0
+    t = 1.6666666666666665
+    r = 1.333333333333333
 
     test_parameters_container = SPM.SimulationParameterContainer(t, r)
     test_vtu_filename = r'/home/chris/WorkData/nektar++/actual/bezier/basic_t{}_r{}/tube_bezier_1pt0mesh_using_points_from_xml.vtu'.format(t, r)

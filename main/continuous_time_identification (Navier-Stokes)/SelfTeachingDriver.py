@@ -73,10 +73,13 @@ if __name__ == '__main__':
     reference_vtu_filename_template = nektar_data_root_path + simulation_subfolder_template + \
                                         vtu_and_xml_file_basename + '.vtu'
 
-    use_pressure_node_in_training = True
+    true_viscosity = 0.004
+    true_density = 0.00106
+
+    use_pressure_reference_in_training = True
     number_of_hidden_layers = 4
 
-    starting_index = 45
+    starting_index = 50  # 45
     ending_index = 200
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
@@ -177,10 +180,13 @@ if __name__ == '__main__':
             logger.info("Saved sim_dir_and_parameter_tuples to file {}".format(picklefile_name))
 
         NavierStokes.run_NS_trainer(pickled_model_filename, saved_tf_model_filename, simulation_parameters_index,
-                                    num_training_iterations, use_pressure_node_in_training, number_of_hidden_layers,
-                                    max_optimizer_iterations, training_count_specifier, load_existing_model=start_from_existing_model,
+                                    num_training_iterations, use_pressure_reference_in_training, number_of_hidden_layers,
+                                    max_optimizer_iterations, training_count_specifier, true_viscosity,
+                                    true_density, load_existing_model=start_from_existing_model,
                                     additional_simulation_data=sim_dir_and_parameter_tuples, parent_logger=logger,
                                     data_caching_directory=master_model_data_root_path)
+
+        SolutionQualityChecker.scatterplot_parameters_which_have_training_data(picklefile_name)
 
         additional_t_parameters_NS_simulations_run_at = [pair[1] for pair in sim_dir_and_parameter_tuples]
 
@@ -194,3 +200,17 @@ if __name__ == '__main__':
                                                        reference_vtu_filename_template,
                                                        additional_real_simulation_data_parameters=additional_t_parameters_NS_simulations_run_at,
                                                        plot_filename_tag=str(simulation_parameters_index))
+
+        for parameters_container in parameter_manager.all_parameter_points():
+
+            test_vtu_filename = (nektar_data_root_path + simulation_subfolder_template + \
+                                vtu_and_xml_file_basename + r'_using_points_from_xml.vtu').format(
+                                                            parameters_container.get_t(), parameters_container.get_r())
+
+            NavierStokes.load_and_evaluate_model(pickled_model_filename_post, saved_tf_model_filename_post,
+                                                 max_optimizer_iterations,
+                                                 true_density, true_viscosity, test_vtu_filename,
+                                                 parameters_container)
+
+        parameters_scatter_plot_filename_tag = simulation_parameters_index + 1
+        SolutionQualityChecker.scatterplot_parameters_which_have_training_data(picklefile_name, output_filename_tag=parameters_scatter_plot_filename_tag)
