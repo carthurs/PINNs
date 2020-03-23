@@ -2,16 +2,15 @@
 @author: Maziar Raissi, Chris Arthurs
 """
 import sys
-sys.path.insert(0, '../../Utilities/')
 
 import os
+import os.path
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 tf.get_logger().setLevel('INFO')
 tf.autograph.set_verbosity(1)
 tf.logging.set_verbosity(tf.logging.ERROR)
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-from tensorflow.python import debug as tf_debug
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -19,12 +18,6 @@ import matplotlib.pyplot as plt
 import scipy.io
 from scipy.interpolate import griddata
 import time
-from itertools import product, combinations
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from plotting import newfig, savefig  # this is the thing in the Utilities subfolder (added above to the sys path) - NOT a 3rd party module
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-import matplotlib.gridspec as gridspec
 import pickle
 import ttictoc
 import tqdm
@@ -35,6 +28,7 @@ import VtkDataReader
 import BoundaryConditionCodes as BC
 import SimulationParameterManager as SPM
 import logging
+import ConfigManager
 
 # np.random.seed(1234)
 # tf.set_random_seed(1234)
@@ -65,11 +59,11 @@ class PhysicsInformedNN:
         variables_to_remove = ['sess', 'optimizer_Adam', 'train_op_Adam', 'weights', 'biases', 'lambda_1',
                                'lambda_2', 'x_tf', 'y_tf', 't_tf', 'u_tf', 'v_tf', 'r_tf', 'u_pred',
                                'v_pred', 'p_pred',
-                               'f_u_pred', 'f_v_pred', 'loss', 'p_at_first_node', 'loss_summary', 'psi_pred',
+                               'f_u_pred', 'f_v_pred', 'loss', 'predicted_ref_node_pressures', 'loss_summary', 'psi_pred',
                                'loss_velocity_summary', 'loss_ns_summary', 'loss_navier_stokes', 'loss_velocity',
                                'loss_pressure_node', 'other_summary_scalars', 'loss_pieces_out',
                                'loss_boundary_conditions', 'max_optimizer_iterations', 'bc_codes_tf',
-                               'loss_bc_summary']
+                               'loss_bc_summary', 'loss_pressure_node_summary']
 
         for variable_to_remove in variables_to_remove:
             try:
@@ -84,7 +78,7 @@ class PhysicsInformedNN:
         # support for missing variable in old save files
         self.discover_navier_stokes_parameters = False
         # self.p_reference_point = None
-        self.p_at_first_node = 3.141592
+        self.predicted_ref_node_pressures = 3.141592
 
         self._finalise_state_setup()
 
@@ -120,8 +114,9 @@ class PhysicsInformedNN:
 
         self.bc_codes_tf = tf.placeholder(tf.float32, shape=[None], name='bc_codes_placeholder')
 
-        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred, self.psi_pred, self.p_at_first_node, self.loss_pieces_out =\
-                                                                            self.net_NS(self.x_tf, self.y_tf, self.t_tf, self.r_tf)
+        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, \
+            self.f_v_pred, self.psi_pred, self.predicted_ref_node_pressures, self.loss_pieces_out =\
+            self.net_NS(self.x_tf, self.y_tf, self.t_tf, self.r_tf)
 
         inflow_condition = lambda y: (10.0-y)*y/25.0 * self.t_tf
         zeros = self.u_pred * 0.0  # stupid, I know, but I can't work out how to get the right shape otherwise
@@ -148,14 +143,21 @@ class PhysicsInformedNN:
         #                                              zero)))
 
         navier_stokes_loss_scaling = 1000
+        pressure_node_loss_scaling = 100
 
         self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zeros, self.u_tf - self.u_pred))) + \
                              tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zeros, self.v_tf - self.v_pred)))
         self.loss_navier_stokes = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_u_pred)) + \
                                   tf.reduce_sum(tf.square(navier_stokes_loss_scaling*self.f_v_pred))
 
-        if self.p_reference_point is not None:
-            self.loss_pressure_node = tf.square(self.p_at_first_node[0] - self.p_reference_point[3])
+        if self.ref_nodes_with_true_pressures is not None:
+            difference_sum = 0
+            for node_index in range(len(self.ref_nodes_with_true_pressures)):
+                difference_sum += tf.square(self.predicted_ref_node_pressures[node_index] - self.ref_nodes_with_true_pressures[node_index][4])
+
+            self.loss_pressure_node = tf.squeeze(difference_sum * pressure_node_loss_scaling)
+
+            self.loss_pressure_node_summary = tf.summary.scalar("loss_pressure_node", self.loss_pressure_node)
 
             # loss_t_gradient = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*psi_t_pred)) +\
             #                   tf.reduce_sum(tf.square(navier_stokes_loss_scaling*p_t_pred))
@@ -232,14 +234,14 @@ class PhysicsInformedNN:
 
 
     # Initialize the class
-    def __init__(self, x, y, t, r, u, v, bc_codes, layers, p_reference_point, discover_navier_stokes_parameters,
+    def __init__(self, x, y, t, r, u, v, bc_codes, layers, pressure_reference, discover_navier_stokes_parameters,
                  true_viscosity_in, true_density_in, max_optimizer_iterations_in):
-        self.p_at_first_node = 0.0
+        self.predicted_ref_node_pressures = 0.0
         self.discover_navier_stokes_parameters = discover_navier_stokes_parameters
 
         self.reset_training_data(x, y, t, r, u, v, bc_codes)
 
-        self.p_reference_point = p_reference_point
+        self.ref_nodes_with_true_pressures = pressure_reference
 
         self.layers = layers
 
@@ -332,13 +334,15 @@ class PhysicsInformedNN:
 
         # run the NN a second time on the first node (at x=1, y=-2, t=0) to get a reference pressure whose value we can
         # target in order to control the pressure field's absolute values;
-        if self.p_reference_point is not None:
-            psi_and_p_ignore_psi = self.neural_net(tf.constant(self.p_reference_point[0:3], shape=(1, 4)), self.weights, self.biases)
-            self.p_at_first_node = psi_and_p_ignore_psi[:, 1]
+        self.predicted_ref_node_pressures = []
+        if self.ref_nodes_with_true_pressures is not None:
+            for reference_node in self.ref_nodes_with_true_pressures:
+                psi_and_p_ignore_psi = self.neural_net(tf.constant(reference_node[0:3], shape=(1, 4)), self.weights, self.biases)
+                self.predicted_ref_node_pressures.append(psi_and_p_ignore_psi[:, 1])
         else:
-            self.p_at_first_node = tf.constant([-1.0])
+            self.predicted_ref_node_pressures = [tf.constant([-1.0])]
 
-        return u, v, p, f_u, f_v, psi, self.p_at_first_node, loss_pieces  #, psi_t, p_t
+        return u, v, p, f_u, f_v, psi, self.predicted_ref_node_pressures, loss_pieces  #, psi_t, p_t
 
     def callback(self, loss, lambda_1, lambda_2):
         self.iteration_counter += 1
@@ -350,7 +354,7 @@ class PhysicsInformedNN:
         print('(A) Loss: %.3e, l1: %.3f, l2: %.5f (%f/%f)' % (loss, lambda_1, lambda_2,
                                                               self.iteration_counter, self.max_optimizer_iterations))
 
-    def train(self, nIter, summary_writer, x_predict, y_predict, t_predict):
+    def train_model(self, nIter, summary_writer, x_predict, y_predict, t_predict, savefile_tag=None):
 
         tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t, self.r_tf: self.r,
                    self.u_tf: self.u, self.v_tf: self.v, self.bc_codes_tf: self.bc_codes}
@@ -359,17 +363,18 @@ class PhysicsInformedNN:
         self.loss_history_write_index = 0
 
         start_time = time.time()
-        for it in tqdm.tqdm(range(nIter), desc='[Training...]'):
+        for it in tqdm.tqdm(range(nIter), desc='[Training (Param. set I.D. = {})...]'.format(savefile_tag)):
             self.sess.run(self.train_op_Adam, tf_dict)
 
             # Print
             if it % 40 == 0:
                 elapsed = time.time() - start_time
                 loss_value, loss_summary_retrieved, loss_vel_summary_retrieved, loss_ns_summary_retrieved,\
-                other_summary_scalars_retrieved, loss_bc_summary_retrieved = \
+                other_summary_scalars_retrieved, loss_bc_summary_retrieved, loss_pressure_node_summary_retrieved = \
                                                     self.sess.run([self.loss, self.loss_summary,
                                                                   self.loss_velocity_summary, self.loss_ns_summary,
-                                                                   self.other_summary_scalars, self.loss_bc_summary],
+                                                                   self.other_summary_scalars, self.loss_bc_summary,
+                                                                   self.loss_pressure_node_summary],
                                                                   tf_dict)
                 self.loss_history = array_extending_insert(self.loss_history, self.loss_history_write_index, loss_value)
                 self.loss_history_write_index += 1
@@ -378,6 +383,7 @@ class PhysicsInformedNN:
                 summary_writer.add_summary(loss_vel_summary_retrieved, it)
                 summary_writer.add_summary(loss_ns_summary_retrieved, it)
                 summary_writer.add_summary(loss_bc_summary_retrieved, it)
+                summary_writer.add_summary(loss_pressure_node_summary_retrieved, it)
                 for summary in other_summary_scalars_retrieved:
                     summary_writer.add_summary(summary, it)
 
@@ -397,9 +403,9 @@ class PhysicsInformedNN:
                     lambda_1_value = self.true_density
                     lambda_2_value = self.true_viscosity
 
-                reference_node_pressure = self.sess.run(self.p_at_first_node)
+                reference_node_pressure = self.sess.run(self.predicted_ref_node_pressures)
                 print('It: %d, (B) Loss: %.3e, l1: %.3f, l2: %.5f, Time: %.2f, %f' %
-                      (it, loss_value, lambda_1_value, lambda_2_value, elapsed, reference_node_pressure))
+                      (it, loss_value, lambda_1_value, lambda_2_value, elapsed, reference_node_pressure[0]))
                 start_time = time.time()
 
         # just a marker to see where the optimizers switched over
@@ -451,7 +457,9 @@ class PhysicsInformedNN:
 
 
 def plot_graph(x_data, y_data, title, scatter_x=None, scatter_y=None, savefile_nametag=None, second_y_data=None,
-               y_range_1=(None, None), y_range_2=(None, None), y_range_3=(None, None), relative_or_absolute_output_folder=None):
+               y_range_1=(None, None), y_range_2=(None, None), y_range_3=(None, None),
+               relative_or_absolute_output_folder=None,
+               logplot=True):
     plt.figure(88)
     if second_y_data is not None:
         number_of_columns = 3
@@ -461,21 +469,24 @@ def plot_graph(x_data, y_data, title, scatter_x=None, scatter_y=None, savefile_n
     plt.subplot(1, number_of_columns, 1)
     plt.plot(x_data, y_data)
     plt.axis([None, None, y_range_1[0], y_range_1[1]])
-    plt.yscale('log')
+    if logplot:
+        plt.yscale('log')
     plt.title(title)
 
     if second_y_data is not None:
         plt.subplot(1, number_of_columns, 2)
         plt.plot(x_data, second_y_data)
         plt.axis([None, None, y_range_2[0], y_range_2[1]])
-        plt.yscale('log')
+        if logplot:
+            plt.yscale('log')
         plt.title('boundary')
 
         plt.subplot(1, number_of_columns, 3)
         loss_sum = [y1+y2 for (y1,y2) in zip(y_data, second_y_data)]
         plt.plot(x_data, loss_sum)
         plt.axis([None, None, y_range_3[0], y_range_3[1]])
-        plt.yscale('log')
+        if logplot:
+            plt.yscale('log')
         plt.title('sum')
 
     if scatter_x is not None and scatter_y is not None:
@@ -516,6 +527,8 @@ def plot_solution(X_star, u_star, title, colour_range=(None, None), relative_or_
     figure_savefile = title.replace(" ", "_") + '.png'
     if relative_or_absolute_folder_path is not None:
         figure_savefile = relative_or_absolute_folder_path + figure_savefile
+        if not os.path.exists(relative_or_absolute_folder_path):
+            os.mkdir(relative_or_absolute_folder_path)
     plt.savefig(figure_savefile)
     plt.close()
 
@@ -531,10 +544,10 @@ def axisEqual3D(ax):
 
 
 def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_training_iterations_in, x_star_in, y_star_in,
-                           t_star_in, pickled_model_filename_in, saved_tf_model_filename_in):
+                           t_star_in, pickled_model_filename_in, saved_tf_model_filename_in, savefile_tag_in):
     summary_writer = tf.summary.FileWriter(tensorboard_log_directory_in, tf.get_default_graph())
 
-    model_in.train(number_of_training_iterations_in, summary_writer, x_star_in, y_star_in, t_star_in)
+    model_in.train_model(number_of_training_iterations_in, summary_writer, x_star_in, y_star_in, t_star_in, savefile_tag_in)
 
     summary_writer.flush()
     summary_writer.close()
@@ -554,31 +567,57 @@ def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_tra
         log_message(error_message)
 
 
-def evaluate_solution(model, plot_lots, test_data, true_density_value, true_viscosity_value):
+def _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in):
+    tf.reset_default_graph()
+    with open(pickled_model_filename, 'rb') as pickled_model_file:
+        loaded_model = pickle.load(pickled_model_file)
+        loaded_model.set_max_optimizer_iterations(max_optimizer_iterations_in)
 
-    r_test = test_data['r']
+    loaded_model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
+                                                  log_device_placement=False))
+
+    tf.train.Saver().restore(loaded_model.sess, saved_tf_model_filename)
+    return loaded_model
+
+
+def load_and_evaluate_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in,
+                            true_density_value, true_viscosity_value, test_vtu_filename, test_parameters_container):
+
+    config_manager = ConfigManager.ConfigManager()
+    master_model_data_root_path = config_manager.get_master_model_data_root_path()
+
+    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
+
+    vtk_reader = VtkDataReader.VtkDataReader(test_vtu_filename,
+                                            test_parameters_container,
+                                            master_model_data_root_path
+                                            )
+
+    test_data = vtk_reader.get_test_data(VtkDataReader.VtkDataReader.MODE_UNSTRUCTURED)
+
+    prediction = evaluate_solution(model, test_data)
+    errors_out = compute_errors(test_data, prediction, true_density_value, true_viscosity_value)
+
+    vtk_reader.save_prediction_to_vtk_mesh(prediction)
+
+    print("errors_out:", errors_out)
+    return errors_out
+
+
+def compute_errors(test_data, prediction, true_density_value, true_viscosity_value):
     u_test = test_data['u']
     v_test = test_data['v']
-    X_star = test_data['X_star']  # TODO this is somewhat redundant; X_star and (X_test and Y_test) contain the same data. Refactor.
-    X_test = test_data['x']
-    Y_test = test_data['y']
-    t_test = test_data['t']
     p_test = test_data['p']
-
-    # Prediction
-    u_pred, v_pred, p_pred, psi_pred = model.predict(X_test, Y_test, t_test, r_test)
-    lambda_1_value = model.sess.run(model.lambda_1)
-    lambda_2_value = model.sess.run(model.lambda_2)
 
     # Error
     errors = dict()
-    errors['error_u'] = np.linalg.norm(u_test - u_pred, 2) / np.linalg.norm(u_test, 2)
-    errors['error_v'] = np.linalg.norm(v_test - v_pred, 2) / np.linalg.norm(v_test, 2)
-    errors['error_p'] = np.linalg.norm(np.squeeze(p_test) - p_pred, 2) / np.linalg.norm(p_test, 2)
+    errors['error_u'] = np.linalg.norm(u_test - prediction['u_pred'], 2) / np.linalg.norm(u_test, 2)
+    errors['error_v'] = np.linalg.norm(v_test - prediction['v_pred'], 2) / np.linalg.norm(v_test, 2)
+    errors['error_p'] = np.linalg.norm(np.squeeze(p_test) - prediction['p_pred'], 2) / np.linalg.norm(p_test, 2)
     log_message('Computed errors were: {}'.format(errors))
 
-    error_lambda_1 = np.abs(lambda_1_value - true_density_value) / true_density_value * 100
-    error_lambda_2 = np.abs(lambda_2_value - true_viscosity_value) / true_viscosity_value * 100
+    errors['error_lambda_1'] = np.abs(prediction['lambda_1_value'] - true_density_value) / true_density_value * 100
+    errors['error_lambda_2'] = np.abs(prediction['lambda_2_value'] - true_viscosity_value) / true_viscosity_value * 100
 
     # print('Error u: %e' % (error_u))
     # print('Error v: %e' % (error_v))
@@ -598,12 +637,44 @@ def evaluate_solution(model, plot_lots, test_data, true_density_value, true_visc
     return errors
 
 
+def evaluate_solution(model, test_data):
+
+    prediction = dict()
+    u_pred, v_pred, p_pred, psi_pred = model.predict(test_data['x'], test_data['y'], test_data['t'], test_data['r'])
+
+    prediction['u_pred'] = u_pred
+    prediction['v_pred'] = v_pred
+    prediction['p_pred'] = p_pred
+    prediction['psi_pred'] = psi_pred
+
+    lambda_1_value = model.sess.run(model.lambda_1)
+    lambda_2_value = model.sess.run(model.lambda_2)
+
+    prediction['lambda_1_value'] = lambda_1_value
+    prediction['lambda_2_value'] = lambda_2_value
+
+    # Add the test coordinates, as useful metadata about the prediction
+    prediction['x'] = test_data['x']
+    prediction['y'] = test_data['y']
+    prediction['t'] = test_data['t']
+    prediction['r'] = test_data['r']
+
+    return prediction
+
+
 def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, number_of_training_iterations,
-                   use_pressure_node_in_training, number_of_hidden_layers, max_optimizer_iterations_in,
-                   N_train_specifier, load_existing_model=False, additional_simulation_data=None, parent_logger=None,
+                   use_pressure_reference_in_training, number_of_hidden_layers, max_optimizer_iterations_in,
+                   N_train_specifier,
+                   true_viscosity_value,
+                   true_density_value,
+                   discover_navier_stokes_parameters = False,
+                   load_existing_model=False, additional_simulation_data=None, parent_logger=None,
                    data_caching_directory=os.getcwd()):
 
     tensorboard_log_directory_base = '{}/logs'.format(data_caching_directory)
+
+    if not os.path.exists(tensorboard_log_directory_base):
+        os.mkdir(tensorboard_log_directory_base)
 
     # Warning: this assumes that the only contents of the logs directory is subdirs with integer names.
     integer_log_subdir_names = [int(filename) for filename in os.listdir(tensorboard_log_directory_base)]
@@ -631,13 +702,10 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         do_noisy_data_case = False
         plot_lots = False
         train_model_further_with_new_data = True
-        # use_pressure_node_in_training = True
-        discover_navier_stokes_parameters = False
-        true_viscosity_value = 0.004  # 0.01
-        true_density_value = 0.00106  # 1.0
+        # use_pressure_reference_in_training = True
         # number_of_training_iterations = 100000  # 200000
 
-        layers = [4] + [40] * number_of_hidden_layers + [3]
+        layers = [4] + [80] * number_of_hidden_layers + [3]
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
         # Load Data
@@ -698,6 +766,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         r_train = r[idx, :]
         u_train = u[idx, :]
         v_train = v[idx, :]
+        p_train = p[idx, :]
         bc_codes_train = bc_codes[idx]
 
         # Test Data
@@ -711,11 +780,29 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         t_test = test_data['t']
         r_test = test_data['r']
 
-        if use_pressure_node_in_training:
-            # These need to be scalars, not 1-element numpy arrays, so map .item() across them to pull out the scalars
-            p_single_reference_node = list(map(lambda x: x.item(), [X_test[0], Y_test[0], t_test[0], r_test[0]]))
+        # Left to its own devices, the neural network will find a pressure field with the correct gradient, but not with
+        # the correct absolute value. We can solve this by providing a reference point for each solution field.
+        #
+        # This is not necessary (you could just shift all pressure fields manually, after training), but it is tidier
+        # to do it this way.
+        pressure_reference_nodes = []
+        if use_pressure_reference_in_training:
+            pressure_reference_location = (20.0, 5.0)
+            for input_data_parameters, _ in data_reader.get_test_data_over_all_known_files_generator():
+
+                p_reference = data_reader.evaluate_field_at_point(pressure_reference_location[0],
+                                                                  pressure_reference_location[1],
+                                                                  'p',
+                                                                  input_data_parameters)
+
+                pressure_reference_node = [pressure_reference_location[0],
+                                           pressure_reference_location[1],
+                                           input_data_parameters.get_t(),
+                                           input_data_parameters.get_r(),
+                                           p_reference]
+            pressure_reference_nodes.append(pressure_reference_node)
         else:
-            p_single_reference_node = None
+            pressure_reference_nodes = None
 
         pickled_model_filename = input_pickle_file_template.format(savefile_tag)
         saved_tf_model_filename = input_saved_model_template.format(savefile_tag)
@@ -723,38 +810,32 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         saved_tf_model_filename_out = input_saved_model_template.format(savefile_tag + 1)
 
         if load_existing_model:
-            tf.reset_default_graph()
-            with open(pickled_model_filename, 'rb') as pickled_model_file:
-                model = pickle.load(pickled_model_file)
-                model.set_max_optimizer_iterations(max_optimizer_iterations_in)
-
-            model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                         log_device_placement=False))
-
-            tf.train.Saver().restore(model.sess, saved_tf_model_filename)
+            model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
 
             # model.call_just_LBGDSF_optimizer()
             if train_model_further_with_new_data:
                 model.reset_training_data(x_train, y_train, t_train, r_train, u_train, v_train, bc_codes_train)
 
                 train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
-                                       t_test, pickled_model_filename_out, saved_tf_model_filename_out)
+                                       t_test, pickled_model_filename_out, saved_tf_model_filename_out, savefile_tag)
         else:
             # Training
             model = PhysicsInformedNN(x_train, y_train, t_train, r_train, u_train, v_train, bc_codes_train, layers,
-                                      p_single_reference_node,
+                                      pressure_reference_nodes,
                                       discover_navier_stokes_parameters, true_viscosity_value, true_density_value,
                                       max_optimizer_iterations_in)
 
             train_and_pickle_model(tensorboard_log_directory, model, number_of_training_iterations, X_test, Y_test,
-                                   t_test, pickled_model_filename_out, saved_tf_model_filename_out)
+                                   t_test, pickled_model_filename_out, saved_tf_model_filename_out, savefile_tag)
 
         gathered_errors_u = dict()
         gathered_errors_v = dict()
         gathered_errors_p = dict()
 
         for parameter_container, evaluation_test_data in data_reader.get_test_data_over_all_known_files_generator():
-            computed_errors = evaluate_solution(model, plot_lots, evaluation_test_data, true_density_value, true_viscosity_value)
+            prediction = evaluate_solution(model, evaluation_test_data)
+            computed_errors = compute_errors(evaluation_test_data, prediction, true_density_value, true_viscosity_value)
+
             gathered_errors_u[parameter_container] = computed_errors['error_u']
             gathered_errors_v[parameter_container] = computed_errors['error_v']
             gathered_errors_p[parameter_container] = computed_errors['error_p']
@@ -772,12 +853,17 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         for key in gathered_errors_p:
             gathered_errors_p_list.append(abs(gathered_errors_p[key]))
 
-        if max(gathered_errors_u_list) != min(gathered_errors_u_list):
-            plot_graph(range(len(gathered_errors_u_list)), gathered_errors_u_list, 'gathered errors u list')
-        if max(gathered_errors_v_list) != min(gathered_errors_v_list):
-            plot_graph(range(len(gathered_errors_v_list)), gathered_errors_v_list, 'gathered errors v list')
-        if max(gathered_errors_p_list) != min(gathered_errors_p_list):
-            plot_graph(range(len(gathered_errors_p_list)), gathered_errors_p_list, 'gathered errors p list')
+        all_gathered_errors = [gathered_errors_u_list, gathered_errors_v_list, gathered_errors_p_list]
+        for gathered_errors in all_gathered_errors:
+            for index, error in enumerate(gathered_errors):
+                if not np.isfinite(error):
+                    gathered_errors[index] = 0.0000012345
+
+
+
+        plot_graph(range(len(gathered_errors_u_list)), gathered_errors_u_list, 'gathered errors u list', logplot=False)
+        plot_graph(range(len(gathered_errors_v_list)), gathered_errors_v_list, 'gathered errors v list', logplot=False)
+        plot_graph(range(len(gathered_errors_p_list)), gathered_errors_p_list, 'gathered errors p list', logplot=False)
 
         # np.savetxt('loss_history_{}_{}.dat'.format(number_of_training_iterations, model.get_max_optimizer_iterations()), model.getLossHistory())
         #
@@ -809,7 +895,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
 
             # Training
             # model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-            model.train(number_of_training_iterations)  # 200000
+            model.train_model(number_of_training_iterations)  # 200000
 
             lambda_1_value_noisy = model.sess.run(model.lambda_1)
             lambda_2_value_noisy = model.sess.run(model.lambda_2)
@@ -996,12 +1082,14 @@ if __name__ == "__main__":
     additional_nametag = 'working_500TrainingDatapoints'
     num_training_iterations = 100000
     max_optimizer_iterations = 50000  # 50000
-    use_pressure_node_in_training = True
+    use_pressure_reference_in_training = True
     vtu_data_file_name = 'tube_bezier_1pt0mesh'
     savefile_tag = 4
     number_of_hidden_layers = 4
+    true_viscosity = 0.004
+    true_density = 0.00106
 
-    if use_pressure_node_in_training:
+    if use_pressure_reference_in_training:
         file_name_tag = vtu_data_file_name + additional_nametag + "_zero_ref_pressure.pickle"
     else:
         file_name_tag = vtu_data_file_name + additional_nametag + ""
@@ -1016,5 +1104,6 @@ if __name__ == "__main__":
     N_train_in = 5000
 
     run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, num_training_iterations,
-        use_pressure_node_in_training, number_of_hidden_layers, max_optimizer_iterations,
-        N_train_in, load_existing_model=False, additional_simulation_data=[sim_dir_and_parameter_tuple])
+                   use_pressure_reference_in_training, number_of_hidden_layers, max_optimizer_iterations,
+                   N_train_in, true_viscosity, true_density,
+                   load_existing_model=False, additional_simulation_data=[sim_dir_and_parameter_tuple])

@@ -7,6 +7,7 @@ import NavierStokes
 import hashlib
 import pickle
 import os
+import copy
 import plotly.graph_objects as go
 import NektarXmlHandler
 import ConfigManager
@@ -77,11 +78,12 @@ class VtkDataReader(object):
     def __init__(self, full_filename, parameters_container, data_cache_path):
         self.time_value = np.expand_dims(np.array([parameters_container.get_t()]), axis=1)
         self.curvature_value = np.expand_dims(np.array([parameters_container.get_r()]), axis=1)
+        self.full_filename = full_filename
 
-        filename_without_extension, ignored_extension = os.path.splitext(full_filename)
+        filename_without_extension, ignored_extension = os.path.splitext(self.full_filename)
         self.associated_xml_file_name = filename_without_extension + '.xml'
 
-        file_md5hash = md5hash_file(full_filename)
+        file_md5hash = md5hash_file(self.full_filename)
         cached_output_filename = "{}.v{}.pickle".format(file_md5hash, VtkDataReader.output_data_version)
         if data_cache_path is not None:
             self.cached_output_filename_fullpath = os.path.join(data_cache_path, cached_output_filename)
@@ -89,21 +91,43 @@ class VtkDataReader(object):
             self.cached_output_filename_fullpath = None
 
         reader = vtk.vtkXMLUnstructuredGridReader()
-        reader.SetFileName(full_filename)
+        reader.SetFileName(self.full_filename)
         reader.Update()
 
         self.unstructured_grid = reader.GetOutput()
         self.scalar_point_data = self.unstructured_grid.GetPointData()
         self.points_vtk = self.unstructured_grid.GetPoints().GetData()
 
+    def _get_read_data_as_vtk_array(self, array_name):
+        return self.scalar_point_data.GetScalars(array_name)
+
     def get_read_data_as_numpy_array(self, array_name):
-        array_data = self.scalar_point_data.GetScalars(array_name)
+        array_data = self._get_read_data_as_vtk_array(array_name)
         if array_data is None:
             return_value = None
         else:
             return_value = numpy_support.vtk_to_numpy(array_data)
 
         return return_value
+
+    def evaluate_field_at_point(self, x, y, field_name):
+        probe = vtk.vtkProbeFilter()
+        probe.SetSourceData(self.unstructured_grid)
+
+        probe_point = vtk.vtkPoints()
+        probe_point.SetData(numpy_support.numpy_to_vtk(np.array([[x, y, 0]])))
+
+        probe_point_polydata = vtk.vtkPolyData()
+        probe_point_polydata.SetPoints(probe_point)
+
+        probe.SetInputData(probe_point_polydata)
+        probe.Update()
+
+        return_data = numpy_support.vtk_to_numpy(probe.GetOutput().GetPointData().GetArray(field_name))
+        if field_name == 'p':
+            return_data *= VtkDataReader.NEKTAR_FIX_FACTOR
+
+        return return_data
 
     def get_point_coordinates(self):
         return numpy_support.vtk_to_numpy(self.points_vtk)
@@ -248,6 +272,29 @@ class VtkDataReader(object):
 
         return return_data
 
+    def get_test_data(self, mode):
+        raw_data_for_test = self.get_data_by_mode(mode)
+
+        X_star = raw_data_for_test['X_star']  # N x 2
+
+        test_data = dict()
+        test_data['X_star'] = X_star
+        test_data['x'] = X_star[:, 0:1]
+        test_data['y'] = X_star[:, 1:2]
+
+        N = len(test_data['y'])
+        test_data['t'] = np.ones((N, 1)) * self.time_value
+        test_data['r'] = np.ones((N, 1)) * self.curvature_value
+
+        U_star = raw_data_for_test['U_star']  # num_parameter_slices x 2 x T
+        test_data['u'] = U_star[:, 0]
+        test_data['v'] = U_star[:, 1]
+
+        test_data['p'] = raw_data_for_test['p_star']
+
+        test_data['bc_codes'] = raw_data_for_test['bc_codes']
+        return test_data
+
     # TODO refactor this into its own class for plotting...
     def plotly_plot_mesh(self):
         raw_coordinates_data = self.get_point_coordinates()
@@ -292,6 +339,54 @@ class VtkDataReader(object):
 
         fig = go.Figure(data=[velocity_plot, pressure_plot, bc_codes_plot])
         fig.show()
+
+    def save_prediction_to_vtk_mesh(self, prediction):
+
+        filename_without_extension, ignored_extension = os.path.splitext(self.full_filename)
+
+        output_filename = filename_without_extension + "_predicted.vtu"
+
+        writer = vtk.vtkXMLUnstructuredGridWriter()
+        writer.SetFileName(output_filename)
+
+        unstructured_grid_out = vtk.vtkUnstructuredGrid()
+        unstructured_grid_out.SetPoints(self.unstructured_grid.GetPoints())
+        unstructured_grid_out.SetCells(vtk.VTK_TRIANGLE, self.unstructured_grid.GetCells())
+
+        prediction_array_names_to_add = ['p_pred', 'u_pred', 'v_pred']
+        for array_name in prediction_array_names_to_add:
+            array_to_add = numpy_support.numpy_to_vtk(prediction[array_name])
+            array_to_add.SetName(array_name)
+            unstructured_grid_out.GetPointData().AddArray(array_to_add)
+
+        fem_array_names_to_add = ['u', 'v', 'p']
+        for array_name in fem_array_names_to_add:
+            if array_name == 'p':
+                raw_p_data = self._get_read_data_as_vtk_array(array_name)
+                numpy_array = numpy_support.vtk_to_numpy(raw_p_data)
+                numpy_array = numpy_array * VtkDataReader.NEKTAR_FIX_FACTOR
+
+                # min_p_prediction = np.min(prediction['p_pred'])
+                # min_p_data = np.min(numpy_array)
+                #
+                # numpy_array = numpy_array - min_p_data + min_p_prediction
+
+                array_to_add = numpy_support.numpy_to_vtk(numpy_array)
+                array_to_add.SetName('p_fixed')
+
+            else:
+                array_to_add = self._get_read_data_as_vtk_array(array_name)
+
+            unstructured_grid_out.GetPointData().AddArray(array_to_add)
+
+
+        # scalar_point_data_output.SetScalars()
+        writer.SetInputData(unstructured_grid_out)
+        writer.Write()
+
+        # self.unstructured_grid = reader.GetOutput()
+        # self.scalar_point_data = self.unstructured_grid.GetPointData()
+        # self.points_vtk = self.unstructured_grid.GetPoints().GetData()
 
 
 class MultipleFileReader(object):
@@ -380,40 +475,32 @@ class MultipleFileReader(object):
     def get_training_data(self):
         return self.gathered_data
 
+    # parameters_container should describe the vtk domain that you wish to probe, and that domain should already be
+    # loaded
+    def evaluate_field_at_point(self, x, y, field_name, parameters_container):
+        file_name = self.file_names_by_parameter_values[parameters_container]
+
+        # todo consider caching the readers; currently they get re-constructed whenever you need them. Only do this if there's a performance issue.
+        test_data = VtkDataReader(file_name,
+                                  parameters_container,
+                                  self.cached_data_path
+                                  ).evaluate_field_at_point(x, y, field_name)
+        return test_data
+
     def get_test_data_over_all_known_files_generator(self):
         for parameter_container_key in self.file_names_by_parameter_values:
             yield parameter_container_key, self.get_test_data(parameter_container_key)
 
     def get_test_data(self, parameters_container_for_test):
-        # Might want to switch this name out for  something passed in instead. Currently we're just evaluating on
+        # Might want to switch this name out for something passed in instead. Currently we're just evaluating on
         # a full space-time slice from which we've sampled training data (which is why its file name is in the
         # dictionary file_names_by_parameter_values).
         file_name = self.file_names_by_parameter_values[parameters_container_for_test]
 
-        raw_data_for_test = VtkDataReader(file_name,
+        test_data = VtkDataReader(file_name,
                                           parameters_container_for_test,
                                           self.cached_data_path
-                                         ).get_data_by_mode(self.mode)
-
-        X_star = raw_data_for_test['X_star']  # N x 2
-
-        test_data = dict()
-        test_data['X_star'] = X_star
-        test_data['x'] = X_star[:, 0:1]
-        test_data['y'] = X_star[:, 1:2]
-
-        N = len(test_data['y'])
-        test_data['t'] = np.ones((N, 1)) * parameters_container_for_test.get_t()
-        test_data['r'] = np.ones((N, 1)) * parameters_container_for_test.get_r()
-
-        U_star = raw_data_for_test['U_star']  # num_parameter_slices x 2 x T
-        test_data['u'] = U_star[:, 0]
-        test_data['v'] = U_star[:, 1]
-
-        test_data['p'] = raw_data_for_test['p_star']
-
-        test_data['bc_codes'] = raw_data_for_test['bc_codes']
-
+                                         ).get_test_data(self.mode)
         return test_data
 
 
@@ -428,8 +515,9 @@ if __name__ == '__main__':
     #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.xml',
     #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu')
 
-    param_container = SPM.SimulationParameterContainer(1.0, 0.6666)
-    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.3333333333333333_r0.6666666666666666/tube_bezier_1pt0mesh_using_points_from_xml.vtu', param_container,
+    param_container = SPM.SimulationParameterContainer(2.0, 2.0)
+    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t{}_r{}/tube_bezier_1pt0mesh_using_points_from_xml.vtu'.format(param_container.get_t(), param_container.get_r()),
+                              param_container,
                               None)
 
     # my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0_r1.0/tube_bezier_1pt0mesh.vtu',
@@ -443,7 +531,9 @@ if __name__ == '__main__':
     # t_star = data['t']  # T x 1
     # X_star = data['X_star']  # N x 2
     #
-    my_reader.plotly_plot_mesh()
+
+    print("press:", my_reader.evaluate_field_at_point(20.0, 5.0, 'p'))
+    # my_reader.plotly_plot_mesh()
 
     # NavierStokes.plot_solution(pinns_input_format_data['X_star'], data['U_star'][:, 0, 0], 1,
     #                            "True Velocity U", colour_range=[0.0, 1.0])
