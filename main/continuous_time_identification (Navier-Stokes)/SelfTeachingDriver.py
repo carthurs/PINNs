@@ -11,25 +11,7 @@ import logging
 import pickle
 import os
 import sys
-
-
-def create_logger():
-    logger = logging.getLogger('SelfTeachingDriver')
-    logger.setLevel(logging.INFO)
-
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-
-    file_log_handler = logging.FileHandler('SelfTeachingDriverLog.txt')
-    file_log_handler.setLevel(logging.INFO)
-    file_log_handler.setFormatter(formatter)
-    logger.addHandler(file_log_handler)
-
-    return logger
+import ActiveLearningUtilities
 
 
 class TrainingDataCountSpecifier(object):
@@ -61,7 +43,7 @@ class TrainingDataCountSpecifier(object):
 
 if __name__ == '__main__':
 
-    logger = create_logger()
+    logger = ActiveLearningUtilities.create_logger('SelfTeachingDriver')
     logger.info("=============== Starting SelfTeachingDriver.py ===============")
     config_manager = ConfigManager.ConfigManager()
 
@@ -81,7 +63,7 @@ if __name__ == '__main__':
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
-    training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.99)
+    training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.3)
     test_mode = False
     if not test_mode:
         num_training_iterations = 20000
