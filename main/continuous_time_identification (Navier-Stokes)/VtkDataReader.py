@@ -214,6 +214,8 @@ class VtkDataReader(object):
                 logger = logging.getLogger('SelfTeachingDriver')
                 logger.info("loaded data from existing pickled class {}".format(self.cached_output_filename_fullpath))
                 return return_data
+            else:
+                return_data = dict()
         except FileNotFoundError as e:
             return_data = dict()
 

@@ -167,6 +167,19 @@ def _do_plot(parameter_container, X_star, u_pred, p_pred, figure_path):
     NavierStokes.plot_solution(X_star, p_pred, plot_title, relative_or_absolute_folder_path=figure_path)
 
 
+def get_max_velocity(data_file, data_directory, parameter_container, model):
+    X_star, t_star, r_star = get_mesh_embedded_in_regular_grid(data_file, data_directory, parameter_container)
+
+    x_star = X_star[:, 0:1]
+    y_star = X_star[:, 1:2]
+
+    t_star = t_star * 0 + parameter_container.get_t()
+    r_star = r_star * 0 + parameter_container.get_r()
+    u_pred, v_pred, p_pred, psi_pred = model.predict(x_star, y_star, t_star, r_star)
+
+    return np.max(u_pred)
+
+
 def plot_on_regular_grid(data_file, data_directory, parameter_container, model, figure_path):
     X_star, t_star, r_star = get_mesh_embedded_in_regular_grid(data_file, data_directory, parameter_container)
 

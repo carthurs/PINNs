@@ -12,25 +12,8 @@ import pickle
 import os
 import sys
 import os.path
+import ActiveLearningUtilities
 
-
-def create_logger():
-    logger = logging.getLogger('SelfTeachingDriver')
-    logger.setLevel(logging.INFO)
-
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-
-    file_log_handler = logging.FileHandler('SelfTeachingDriverLog.txt')
-    file_log_handler.setLevel(logging.INFO)
-    file_log_handler.setFormatter(formatter)
-    logger.addHandler(file_log_handler)
-
-    return logger
 
 
 class TrainingDataCountSpecifier(object):
@@ -62,7 +45,7 @@ class TrainingDataCountSpecifier(object):
 
 if __name__ == '__main__':
 
-    logger = create_logger()
+    logger = ActiveLearningUtilities.create_logger('SelfTeachingDriver')
     logger.info("=============== Starting SelfTeachingDriver.py ===============")
     config_manager = ConfigManager.ConfigManager()
 
