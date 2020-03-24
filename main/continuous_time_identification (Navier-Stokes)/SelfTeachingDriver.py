@@ -11,6 +11,7 @@ import logging
 import pickle
 import os
 import sys
+import os.path
 
 
 def create_logger():
@@ -79,7 +80,7 @@ if __name__ == '__main__':
     use_pressure_reference_in_training = True
     number_of_hidden_layers = 4
 
-    starting_index = 50  # 45
+    starting_index = 0  # 45
     ending_index = 200
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
@@ -203,14 +204,17 @@ if __name__ == '__main__':
 
         for parameters_container in parameter_manager.all_parameter_points():
 
-            test_vtu_filename = (nektar_data_root_path + simulation_subfolder_template + \
+            test_vtu_filename = (nektar_data_root_path + simulation_subfolder_template +
                                 vtu_and_xml_file_basename + r'_using_points_from_xml.vtu').format(
                                                             parameters_container.get_t(), parameters_container.get_r())
 
-            NavierStokes.load_and_evaluate_model(pickled_model_filename_post, saved_tf_model_filename_post,
-                                                 max_optimizer_iterations,
-                                                 true_density, true_viscosity, test_vtu_filename,
-                                                 parameters_container)
+            if os.path.exists(test_vtu_filename):
+                NavierStokes.load_and_evaluate_model(pickled_model_filename_post, saved_tf_model_filename_post,
+                                                     max_optimizer_iterations,
+                                                     true_density, true_viscosity, test_vtu_filename,
+                                                     parameters_container)
+            else:
+                logger.error("File did not exist: {}".format(test_vtu_filename))
 
         parameters_scatter_plot_filename_tag = simulation_parameters_index + 1
         SolutionQualityChecker.scatterplot_parameters_which_have_training_data(picklefile_name, output_filename_tag=parameters_scatter_plot_filename_tag)
