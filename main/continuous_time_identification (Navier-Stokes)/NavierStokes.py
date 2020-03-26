@@ -9,7 +9,6 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 tf.get_logger().setLevel('INFO')
 tf.autograph.set_verbosity(1)
-tf.logging.set_verbosity(tf.logging.ERROR)
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 import numpy as np
 import matplotlib
@@ -598,7 +597,7 @@ def load_and_evaluate_model(pickled_model_filename, saved_tf_model_filename, max
     prediction = evaluate_solution(model, test_data)
     errors_out = compute_errors(test_data, prediction, true_density_value, true_viscosity_value)
 
-    vtk_reader.save_prediction_to_vtk_mesh(prediction)
+    vtk_reader.save_prediction_and_errors_to_vtk_mesh(prediction)
 
     print("errors_out:", errors_out)
     return errors_out

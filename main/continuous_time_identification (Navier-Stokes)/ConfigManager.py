@@ -12,6 +12,7 @@ class ConfigManager(object):
     NEKTAR_DATA_ROOT_PATH = 'nektar_data_root_path'
     MASTER_MODEL_DATA_ROOT_PATH = 'master_model_data_root_path'
     GMSH_PATH = 'gmsh_path'
+    PARAVIEW_PYTHON_INTERPRETER = 'paraview_python_interpreter'
 
     def __init__(self):
         with open('config.json', 'r') as infile:
@@ -51,3 +52,6 @@ class ConfigManager(object):
 
     def get_gmsh_exe(self):
         return self.config_data[ConfigManager.GMSH_PATH]
+
+    def get_paraview_python_interpreter(self):
+        return self.config_data[ConfigManager.PARAVIEW_PYTHON_INTERPRETER]

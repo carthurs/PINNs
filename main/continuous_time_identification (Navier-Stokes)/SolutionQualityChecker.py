@@ -311,6 +311,25 @@ def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_m
 
     return
 
+def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fieldname, output_filename_tag=''):
+    scatter_x = []
+    scatter_y = []
+    scatter_colour = []
+    for parameter_container in parameter_container_to_colours_dict:
+        scatter_x.append(parameter_container.get_t())
+        scatter_y.append(parameter_container.get_r())
+        scatter_colour.append(parameter_container_to_colours_dict[parameter_container])
+
+    plt.figure(90)
+
+    plt.scatter(scatter_x, scatter_y, c=scatter_colour)
+    plt.title('Integrated Errors in {}'.format(fieldname))
+    plt.xlabel('Inflow Parameter')
+    plt.ylabel('Domain Shape Parameter')
+
+    figure_savefile = r'plotted_integrated_errors{}.png'.format(output_filename_tag)
+    plt.savefig(figure_savefile)
+    plt.close()
 
 def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile, output_filename_tag=''):
     with open(sim_dir_and_parameter_tuples_picklefile, 'rb') as infile:

@@ -340,7 +340,7 @@ class VtkDataReader(object):
         fig = go.Figure(data=[velocity_plot, pressure_plot, bc_codes_plot])
         fig.show()
 
-    def save_prediction_to_vtk_mesh(self, prediction):
+    def save_prediction_and_errors_to_vtk_mesh(self, prediction):
 
         filename_without_extension, ignored_extension = os.path.splitext(self.full_filename)
 
@@ -359,34 +359,42 @@ class VtkDataReader(object):
             array_to_add.SetName(array_name)
             unstructured_grid_out.GetPointData().AddArray(array_to_add)
 
+        compute_nodewise_squared_difference = lambda numpy_array1, numpy_array2: np.square(numpy_array1-numpy_array2)
+
         fem_array_names_to_add = ['u', 'v', 'p']
         for array_name in fem_array_names_to_add:
             if array_name == 'p':
                 raw_p_data = self._get_read_data_as_vtk_array(array_name)
-                numpy_array = numpy_support.vtk_to_numpy(raw_p_data)
-                numpy_array = numpy_array * VtkDataReader.NEKTAR_FIX_FACTOR
+                true_pressure_array_nektar_bug_fixed = numpy_support.vtk_to_numpy(raw_p_data) * VtkDataReader.NEKTAR_FIX_FACTOR
 
-                # min_p_prediction = np.min(prediction['p_pred'])
-                # min_p_data = np.min(numpy_array)
-                #
-                # numpy_array = numpy_array - min_p_data + min_p_prediction
+                true_solution_array_to_add = numpy_support.numpy_to_vtk(true_pressure_array_nektar_bug_fixed)
+                true_solution_array_to_add.SetName('p_fixed')
 
-                array_to_add = numpy_support.numpy_to_vtk(numpy_array)
-                array_to_add.SetName('p_fixed')
+                error_array_to_add = compute_nodewise_squared_difference(true_pressure_array_nektar_bug_fixed,
+                                                                         prediction['p_pred'])
+                error_array_to_add_vtk = numpy_support.numpy_to_vtk(error_array_to_add)
+                error_array_to_add_vtk.SetName('p_nodewise_squared_error')
 
             else:
-                array_to_add = self._get_read_data_as_vtk_array(array_name)
+                true_solution_array_to_add = self._get_read_data_as_vtk_array(array_name)
 
-            unstructured_grid_out.GetPointData().AddArray(array_to_add)
+                true_solution_array_to_add_numpy = numpy_support.vtk_to_numpy(true_solution_array_to_add)
+                error_array_to_add = compute_nodewise_squared_difference(true_solution_array_to_add_numpy,
+                                                                         np.squeeze(prediction['{}_pred'.format(array_name)]))
+                error_array_to_add_vtk = numpy_support.numpy_to_vtk(error_array_to_add)
+                error_array_to_add_vtk.SetName('{}_nodewise_squared_error'.format(array_name))
 
+            unstructured_grid_out.GetPointData().AddArray(true_solution_array_to_add)
+            unstructured_grid_out.GetPointData().AddArray(error_array_to_add_vtk)
 
-        # scalar_point_data_output.SetScalars()
+        # Add array of ones, just for calculating the area of the domain by integration:
+        numpy_ones_array = np.ones(np.squeeze(prediction['u_pred']).shape)
+        vtk_ones_array = numpy_support.numpy_to_vtk(numpy_ones_array)
+        vtk_ones_array.SetName('ones')
+        unstructured_grid_out.GetPointData().AddArray(vtk_ones_array)
+
         writer.SetInputData(unstructured_grid_out)
         writer.Write()
-
-        # self.unstructured_grid = reader.GetOutput()
-        # self.scalar_point_data = self.unstructured_grid.GetPointData()
-        # self.points_vtk = self.unstructured_grid.GetPoints().GetData()
 
 
 class MultipleFileReader(object):
