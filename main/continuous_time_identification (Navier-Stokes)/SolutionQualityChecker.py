@@ -311,7 +311,8 @@ def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_m
 
     return
 
-def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fieldname, output_filename_tag=''):
+def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fieldname, output_filename_tag='',
+                                        xrange=None, yrange=None):
     scatter_x = []
     scatter_y = []
     scatter_colour = []
@@ -322,16 +323,24 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
 
     plt.figure(90)
 
-    plt.scatter(scatter_x, scatter_y, c=scatter_colour)
-    plt.title('Integrated Errors in {}'.format(fieldname))
+    plt.scatter(scatter_x, scatter_y, c=scatter_colour, vmin=min(scatter_colour), vmax=max(scatter_colour))
+    plt.colorbar()
+    plt.title('Integrated Errors in {}, Step {}'.format(fieldname, output_filename_tag))
     plt.xlabel('Inflow Parameter')
     plt.ylabel('Domain Shape Parameter')
 
-    figure_savefile = r'plotted_integrated_errors{}.png'.format(output_filename_tag)
+    if xrange is not None:
+        plt.xlim(xrange[0], xrange[1])
+    if yrange is not None:
+        plt.ylim(yrange[0], yrange[1])
+
+    figure_savefile = r'plotted_integrated_errors_{}_{}.png'.format(fieldname, output_filename_tag)
     plt.savefig(figure_savefile)
     plt.close()
 
-def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile, output_filename_tag=''):
+
+def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile, output_filename_tag='',
+                                                    xrange=None, yrange=None):
     with open(sim_dir_and_parameter_tuples_picklefile, 'rb') as infile:
         sim_dir_and_parameter_tuples = pickle.load(infile)
 
@@ -344,6 +353,10 @@ def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples
     plt.title('Training Parameter Values Used')
     plt.xlabel('Inflow Parameter')
     plt.ylabel('Domain Shape Parameter')
+    if xrange is not None:
+        plt.xlim(xrange[0], xrange[1])
+    if yrange is not None:
+        plt.ylim(yrange[0], yrange[1])
 
     figure_savefile = r'plotted_parameters{}.png'.format(output_filename_tag)
     plt.savefig(figure_savefile)

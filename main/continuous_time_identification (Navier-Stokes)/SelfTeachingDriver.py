@@ -6,17 +6,13 @@ matplotlib.use('Agg')
 from NavierStokes import PhysicsInformedNN
 import SolutionQualityChecker
 import SimulationParameterManager
+import LebesgueErrorPlotter
 import numpy as np
-import logging
 import pickle
-import os
 import sys
 import os.path
 import ActiveLearningUtilities
-import subprocess
-import pathlib
-import json
-import tqdm
+
 
 
 class TrainingDataCountSpecifier(object):
@@ -44,23 +40,6 @@ class TrainingDataCountSpecifier(object):
             raise RuntimeError("Unknown mode passed during construction of this class.")
 
         return total_training_points
-
-
-def get_error_integrals(config_manager, test_vtu_filename_without_extension):
-    interprocess_comms_file = pathlib.Path(os.getcwd()) / 'ipc_temp.json'
-
-    subprocess.call([config_manager.get_paraview_python_interpreter(),
-                     'paraviewPythonComputeFieldIntegrals.py',
-                     test_vtu_filename_without_extension + '_predicted.vtu',
-                     str(interprocess_comms_file)
-                     ])
-
-    with open(str(interprocess_comms_file), 'r') as file:
-        integrated_errors = json.load(file)
-    print('ipc loaded data:', integrated_errors)
-    os.remove(str(interprocess_comms_file))
-
-    return integrated_errors
 
 
 if __name__ == '__main__':
@@ -174,7 +153,7 @@ if __name__ == '__main__':
                                                   simulation_subfolder_template,
                                                   vtu_and_xml_file_basename,
                                                   logger)
-        nektar_driver.run_simulation(`parameters_container`)
+        nektar_driver.run_simulation(parameters_container)
 
         sim_dir_and_parameter_tuples.append((nektar_driver.get_vtu_file_without_extension(parameters_container), parameters_container))
 
@@ -205,51 +184,18 @@ if __name__ == '__main__':
                                                        additional_real_simulation_data_parameters=additional_t_parameters_NS_simulations_run_at,
                                                        plot_filename_tag=str(simulation_parameters_index))
 
-        gathered_error_integrals = dict()
+        test_vtu_filename_template_without_extension = (nektar_data_root_path + simulation_subfolder_template +
+                                                        vtu_and_xml_file_basename + r'_using_points_from_xml')
 
-        for parameters_container in tqdm.tqdm(parameter_manager.all_parameter_points(),
-                                              desc='[Gathering error integrals...]',
-                                              total=parameter_manager.get_num_parameter_points()):
-
-            test_vtu_filename_without_extension = (nektar_data_root_path + simulation_subfolder_template +
-                                                   vtu_and_xml_file_basename + r'_using_points_from_xml').format(
-                parameters_container.get_t(), parameters_container.get_r())
-
-            test_vtu_filename = test_vtu_filename_without_extension + '.vtu'
-
-            if os.path.exists(test_vtu_filename):
-                NavierStokes.load_and_evaluate_model(pickled_model_filename_post, saved_tf_model_filename_post,
-                                                     max_optimizer_iterations,
-                                                     true_density, true_viscosity, test_vtu_filename,
-                                                     parameters_container)
-
-                error_integrals = get_error_integrals(config_manager, test_vtu_filename_without_extension)
-                gathered_error_integrals[parameters_container] = error_integrals
-
-            else:
-                logger.error("File did not exist: {}".format(test_vtu_filename))
-
-        parameters_scatter_plot_filename_tag = simulation_parameters_index + 1
-        SolutionQualityChecker.scatterplot_parameters_which_have_training_data(picklefile_name, output_filename_tag=parameters_scatter_plot_filename_tag)
-
-        error_integral_field_name = 'p'
-        integrated_errors_to_plot = dict()
-        error_integral_range = [10000, -10000]
-
-        for parameters_container in parameter_manager.all_parameter_points():
-            try:
-                error_integral = gathered_error_integrals[parameters_container]['integrals'][error_integral_field_name]
-
-                error_integral_range[0] = min(error_integral_range[0], error_integral)
-                error_integral_range[1] = max(error_integral_range[1], error_integral)
-
-                integrated_errors_to_plot[parameters_container] = error_integral
-            except KeyError:
-                logger.info('No error data available for parameters {}'.format(param_container))
-
-        integrated_errors_for_log = ['{'+str(key)+': '+str(value)+'}' for key, value in integrated_errors_to_plot.items()]
-        logger.info("gathered integrated errors were {}".format(''.join(integrated_errors_for_log)))
-
-        SolutionQualityChecker.scatterplot_parameters_with_colours(integrated_errors_to_plot,
-                                                                   error_integral_field_name,
-                                                                   output_filename_tag=parameters_scatter_plot_filename_tag)
+        scatterplot_tag = simulation_parameters_index + 1
+        LebesgueErrorPlotter.scatterplot_used_datapoints_and_errors(parameter_manager,
+                                                                    test_vtu_filename_template_without_extension,
+                                                                    pickled_model_filename_post,
+                                                                    saved_tf_model_filename_post,
+                                                                    max_optimizer_iterations,
+                                                                    true_density, true_viscosity,
+                                                                    config_manager, picklefile_name, logger,
+                                                                    nektar_driver,
+                                                                    parameters_scatter_plot_filename_tag=scatterplot_tag,
+                                                                    xrange=(parameter_range_start, parameter_range_end),
+                                                                    yrange=(parameter_range_start, parameter_range_end))
