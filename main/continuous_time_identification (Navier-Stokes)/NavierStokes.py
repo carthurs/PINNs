@@ -579,8 +579,19 @@ def _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_i
     return loaded_model
 
 
-def load_and_evaluate_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in,
-                            true_density_value, true_viscosity_value, test_vtu_filename, test_parameters_container):
+def load_and_evaluate_model_at_point(point, pickled_model_filename, saved_tf_model_filename,
+                                     max_optimizer_iterations_in):
+
+    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
+    prediction = evaluate_solution(model, point)
+
+    return prediction
+
+
+def load_and_evaluate_model_against_full_solution(pickled_model_filename, saved_tf_model_filename,
+                                                  max_optimizer_iterations_in,
+                                                  true_density_value, true_viscosity_value, test_vtu_filename,
+                                                  test_parameters_container):
 
     config_manager = ConfigManager.ConfigManager()
     master_model_data_root_path = config_manager.get_master_model_data_root_path()

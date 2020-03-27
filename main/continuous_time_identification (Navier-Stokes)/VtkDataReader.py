@@ -370,6 +370,10 @@ class VtkDataReader(object):
                 true_solution_array_to_add = numpy_support.numpy_to_vtk(true_pressure_array_nektar_bug_fixed)
                 true_solution_array_to_add.SetName('p_fixed')
 
+                squared_array = np.square(true_pressure_array_nektar_bug_fixed)
+                squared_array_to_add = numpy_support.numpy_to_vtk(squared_array)
+                squared_array_to_add.SetName('p_squared')
+
                 error_array_to_add = compute_nodewise_squared_difference(true_pressure_array_nektar_bug_fixed,
                                                                          prediction['p_pred'])
                 error_array_to_add_vtk = numpy_support.numpy_to_vtk(error_array_to_add)
@@ -379,6 +383,11 @@ class VtkDataReader(object):
                 true_solution_array_to_add = self._get_read_data_as_vtk_array(array_name)
 
                 true_solution_array_to_add_numpy = numpy_support.vtk_to_numpy(true_solution_array_to_add)
+
+                squared_array = np.square(true_solution_array_to_add_numpy)
+                squared_array_to_add = numpy_support.numpy_to_vtk(squared_array)
+                squared_array_to_add.SetName('{}_squared'.format(array_name))
+
                 error_array_to_add = compute_nodewise_squared_difference(true_solution_array_to_add_numpy,
                                                                          np.squeeze(prediction['{}_pred'.format(array_name)]))
                 error_array_to_add_vtk = numpy_support.numpy_to_vtk(error_array_to_add)
@@ -386,6 +395,7 @@ class VtkDataReader(object):
 
             unstructured_grid_out.GetPointData().AddArray(true_solution_array_to_add)
             unstructured_grid_out.GetPointData().AddArray(error_array_to_add_vtk)
+            unstructured_grid_out.GetPointData().AddArray(squared_array_to_add)
 
         # Add array of ones, just for calculating the area of the domain by integration:
         numpy_ones_array = np.ones(np.squeeze(prediction['u_pred']).shape)

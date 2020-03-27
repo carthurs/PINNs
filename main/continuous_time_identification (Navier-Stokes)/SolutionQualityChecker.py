@@ -312,7 +312,7 @@ def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_m
     return
 
 def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fieldname, output_filename_tag='',
-                                        xrange=None, yrange=None):
+                                        xrange=None, yrange=None, sim_dir_and_parameter_tuples_picklefile=None):
     scatter_x = []
     scatter_y = []
     scatter_colour = []
@@ -323,9 +323,13 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
 
     plt.figure(90)
 
-    plt.scatter(scatter_x, scatter_y, c=scatter_colour, vmin=min(scatter_colour), vmax=max(scatter_colour))
+    plt.scatter(scatter_x, scatter_y, c=scatter_colour, vmin=min(scatter_colour), vmax=max(scatter_colour), cmap='cividis', s=250)
     plt.colorbar()
-    plt.title('Integrated Errors in {}, Step {}'.format(fieldname, output_filename_tag))
+
+    plot_title = 'Integrated Errors in {}, Step {}'.format(fieldname, output_filename_tag)
+    plot_title.replace('_', ' ')
+    plt.title(plot_title)
+
     plt.xlabel('Inflow Parameter')
     plt.ylabel('Domain Shape Parameter')
 
@@ -334,18 +338,33 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
     if yrange is not None:
         plt.ylim(yrange[0], yrange[1])
 
+    if sim_dir_and_parameter_tuples_picklefile is not None:
+        parameters = get_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile)
+        params_with_data_scatter_x = parameters['t']
+        params_with_data_scatter_y = parameters['r']
+        plt.scatter(params_with_data_scatter_x, params_with_data_scatter_y, c='red', s=20)
+
     figure_savefile = r'plotted_integrated_errors_{}_{}.png'.format(fieldname, output_filename_tag)
     plt.savefig(figure_savefile)
     plt.close()
 
 
-def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile, output_filename_tag='',
-                                                    xrange=None, yrange=None):
+def get_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile):
     with open(sim_dir_and_parameter_tuples_picklefile, 'rb') as infile:
         sim_dir_and_parameter_tuples = pickle.load(infile)
 
-    scatter_x = [x[1].get_t() for x in sim_dir_and_parameter_tuples]
-    scatter_y = [y[1].get_r() for y in sim_dir_and_parameter_tuples]
+    output = dict()
+    output['t'] = [x[1].get_t() for x in sim_dir_and_parameter_tuples]
+    output['r'] = [y[1].get_r() for y in sim_dir_and_parameter_tuples]
+
+    return output
+
+
+def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile, output_filename_tag='',
+                                                    xrange=None, yrange=None):
+    parameters = get_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile)
+    scatter_x = parameters['t']
+    scatter_y = parameters['r']
 
     plt.figure(89)
 
@@ -361,6 +380,40 @@ def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples
     figure_savefile = r'plotted_parameters{}.png'.format(output_filename_tag)
     plt.savefig(figure_savefile)
     plt.close()
+
+
+class GradientData(object):
+    def __init__(self, x_start, y_start, x_end, y_end, t, r):
+        self.x_start = x_start
+        self.x_end = x_end
+        self.y_start = y_start
+        self.y_end = y_end
+        self.t = t
+        self.r = r
+
+    def set_start_and_end_indices(self, start, end):
+        self.start_index = start
+        self.end_index = end
+
+    def get_relative_gradient(self):
+        relative_gradient = (self.p_end - self.p_start)/self.p_start
+        print('t={}, r={}, relative gradient={}'.format(self.t, self.r, relative_gradient))
+        return relative_gradient
+
+    def get_ffr_pressure(self):
+        ffr = self.p_end/self.p_start
+        print('FFR (Pressure) = {}, (t={}, r={})'.format(ffr, self.t, self.r))
+        return ffr
+
+    def get_pressure_drop(self):
+        drop = self.p_start - self.p_end
+        print('Pressure Drop = {}, (t={}, r={})'.format(drop, self.t, self.r))
+        return drop
+
+    def grab_data_from_prediction_array(self, prediction_array):
+        p = np.squeeze(prediction_array['p_pred'])
+        self.p_start = p[self.start_index]
+        self.p_end = p[self.end_index]
 
 
 if __name__ == '__main__':
@@ -398,13 +451,49 @@ if __name__ == '__main__':
     true_viscosity_value = 0.004  # 0.01
     true_density_value = 0.00106  # 1.0
     max_optimizer_iterations = 50000
-    t = 1.6666666666666665
-    r = 1.333333333333333
+    t = 2.0
+    r = -2.0
 
-    test_parameters_container = SPM.SimulationParameterContainer(t, r)
-    test_vtu_filename = r'/home/chris/WorkData/nektar++/actual/bezier/basic_t{}_r{}/tube_bezier_1pt0mesh_using_points_from_xml.vtu'.format(t, r)
+    # test_parameters_container = SPM.SimulationParameterContainer(t, r)
+    # test_vtu_filename = r'/home/chris/WorkData/nektar++/actual/bezier/basic_t{}_r{}/tube_bezier_1pt0mesh_using_points_from_xml.vtu'.format(t, r)
+    #
+    # computed_errors = NavierStokes.load_and_evaluate_model_against_full_solution(pickled_model_filename, saved_tf_model_filename,
+    #                                                                              max_optimizer_iterations,
+    #                                                                              true_density_value, true_viscosity_value, test_vtu_filename,
+    #                                                                              test_parameters_container)
 
-    computed_errors = NavierStokes.load_and_evaluate_model(pickled_model_filename, saved_tf_model_filename,
-                                                           max_optimizer_iterations,
-                                                           true_density_value, true_viscosity_value, test_vtu_filename,
-                                                           test_parameters_container)
+    all_gradient_data = []
+    for r_param in np.linspace(0, -4, num=81):
+        all_gradient_data.append(GradientData(5.0, 5.0, 95.0, 5.0, 2.0, r_param))
+
+    N = len(all_gradient_data) * 2
+    x_points = np.zeros((N, 1))
+    y_points = np.zeros((N, 1))
+    t_points = np.zeros((N, 1))
+    r_points = np.zeros((N, 1))
+
+    for index, gradient_data in enumerate(all_gradient_data):
+        data_start_index = 2 * index
+        data_end_index = 2 * index + 1
+
+        gradient_data.set_start_and_end_indices(data_start_index, data_end_index)
+
+        x_points[data_start_index] = gradient_data.x_start
+        x_points[data_end_index] = gradient_data.x_end
+
+        y_points[data_start_index] = gradient_data.y_start
+        y_points[data_end_index] = gradient_data.y_end
+
+        t_points[data_start_index] = gradient_data.t
+        t_points[data_end_index] = gradient_data.t
+
+        r_points[data_start_index] = gradient_data.r
+        r_points[data_end_index] = gradient_data.r
+
+    point = {'x': x_points, 'y': y_points, 't': t_points, 'r': r_points}
+    prediction = NavierStokes.load_and_evaluate_model_at_point(point, pickled_model_filename, saved_tf_model_filename,
+                                                               max_optimizer_iterations)
+    print('prediction2', prediction['p_pred'])
+    for gradient_data in all_gradient_data:
+        gradient_data.grab_data_from_prediction_array(prediction)
+        gradient_data.get_pressure_drop()
