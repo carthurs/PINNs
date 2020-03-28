@@ -41,7 +41,8 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
                                            nektar_driver,
                                            parameters_scatter_plot_filename_tag='',
                                            xrange=None,
-                                           yrange=None):
+                                           yrange=None,
+                                           colourscale_range=None):
     integrated_errors_savefile_name = 'integrated_errors_{}.pickle'.format(parameters_scatter_plot_filename_tag)
 
     if os.path.exists(integrated_errors_savefile_name):
@@ -79,9 +80,13 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
 
     integrated_errors_to_plot = dict()
     integrated_relative_errors_to_plot = dict()
-    error_integral_range = [10000, -10000]
+    error_integral_range = dict()
 
-    for error_integral_field_name in ['u', 'v', 'p']:
+    field_names = ['u', 'v', 'p']
+    for error_integral_field_name in field_names:
+        error_integral_range[error_integral_field_name] = [10000, -10000]
+
+    for error_integral_field_name in field_names:
         integrated_errors_to_plot[error_integral_field_name] = dict()
         integrated_relative_errors_to_plot[error_integral_field_name] = dict()
         for parameters_container in parameter_manager.all_parameter_points():
@@ -89,8 +94,8 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
                 error_integral = gathered_error_integrals[parameters_container]['integrals'][error_integral_field_name]
                 squared_solution_variable_integral = gathered_error_integrals[parameters_container]['non_error_integrals'][error_integral_field_name]
 
-                error_integral_range[0] = min(error_integral_range[0], error_integral)
-                error_integral_range[1] = max(error_integral_range[1], error_integral)
+                error_integral_range[error_integral_field_name][0] = min(error_integral_range[error_integral_field_name][0], error_integral)
+                error_integral_range[error_integral_field_name][1] = max(error_integral_range[error_integral_field_name][1], error_integral)
 
                 integrated_errors_to_plot[error_integral_field_name][parameters_container] = error_integral
 
@@ -110,7 +115,8 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
         SolutionQualityChecker.scatterplot_parameters_with_colours(integrated_errors_to_plot[error_integral_field_name],
                                                                    error_integral_field_name,
                                                                    output_filename_tag=parameters_scatter_plot_filename_tag,
-                                                                   sim_dir_and_parameter_tuples_picklefile=picklefile_name)
+                                                                   sim_dir_and_parameter_tuples_picklefile=picklefile_name,
+                                                                   colourscale_range=colourscale_range)
 
         # Scatterplot relative L2 errors
         SolutionQualityChecker.scatterplot_parameters_with_colours(integrated_relative_errors_to_plot[error_integral_field_name],
@@ -118,8 +124,10 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
                                                                    output_filename_tag=parameters_scatter_plot_filename_tag+'_relative',
                                                                    sim_dir_and_parameter_tuples_picklefile=picklefile_name)
 
+    return error_integral_range
 
-def run_plotting(simulation_parameters_index):
+
+def run_plotting(simulation_parameters_index, colourscale_range=None):
     logger = ActiveLearningUtilities.create_logger('SelfTeachingDriver')
     parameter_range_start = -2.0
     parameter_range_end = 2.0
@@ -158,18 +166,37 @@ def run_plotting(simulation_parameters_index):
                                               logger)
 
     max_optimizer_iterations = 50000
-    scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_template_without_extension,
-                                           pickled_model_filename, saved_tf_model_filename,
-                                           max_optimizer_iterations,
-                                           true_density, true_viscosity,
-                                           config_manager, picklefile_name, logger,
-                                           nektar_driver,
-                                           parameters_scatter_plot_filename_tag=str(simulation_parameters_index),
-                                           xrange=(parameter_range_start, parameter_range_end),
-                                           yrange=(parameter_range_start, parameter_range_end))
+
+    error_integral_range = scatterplot_used_datapoints_and_errors(parameter_manager,
+                                                                  test_vtu_filename_template_without_extension,
+                                                                  pickled_model_filename, saved_tf_model_filename,
+                                                                  max_optimizer_iterations,
+                                                                  true_density, true_viscosity,
+                                                                  config_manager, picklefile_name, logger,
+                                                                  nektar_driver,
+                                                                  parameters_scatter_plot_filename_tag=str(
+                                                                      simulation_parameters_index),
+                                                                  xrange=(parameter_range_start, parameter_range_end),
+                                                                  yrange=(parameter_range_start, parameter_range_end),
+                                                                  colourscale_range=colourscale_range)
+
+    return error_integral_range
 
 
 if __name__ == '__main__':
+    all_error_integral_ranges = []
     for step in range(0, 13):
         simulation_parameters_index = step * 5 + 1
-        run_plotting(simulation_parameters_index)
+        error_integral_range = run_plotting(simulation_parameters_index, colourscale_range=[1.4457175577307878e-05, 4])
+        all_error_integral_ranges.append(error_integral_range)
+
+    field_names = ['u', 'v', 'p']
+    full_error_range = dict()
+    for field_name in field_names:
+        full_error_range[field_name] = [10000, -10000]
+
+        for error_range in all_error_integral_ranges:
+            full_error_range[field_name][0] = min(full_error_range[field_name][0], error_range[field_name][0])
+            full_error_range[field_name][1] = max(full_error_range[field_name][1], error_range[field_name][1])
+
+    print("full error ranges:", full_error_range)

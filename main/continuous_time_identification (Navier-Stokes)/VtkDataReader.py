@@ -533,7 +533,7 @@ if __name__ == '__main__':
     #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.xml',
     #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu')
 
-    param_container = SPM.SimulationParameterContainer(2.0, 2.0)
+    param_container = SPM.SimulationParameterContainer(2.0, -1.15)
     my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t{}_r{}/tube_bezier_1pt0mesh_using_points_from_xml.vtu'.format(param_container.get_t(), param_container.get_r()),
                               param_container,
                               None)
@@ -550,7 +550,8 @@ if __name__ == '__main__':
     # X_star = data['X_star']  # N x 2
     #
 
-    print("press:", my_reader.evaluate_field_at_point(20.0, 5.0, 'p'))
+    print("press:", my_reader.evaluate_field_at_point(5.0, 5.0, 'p'))
+    print("grad:", my_reader.evaluate_field_at_point(5.0, 5.0, 'p') - my_reader.evaluate_field_at_point(95.0, 5.0, 'p'))
     # my_reader.plotly_plot_mesh()
 
     # NavierStokes.plot_solution(pinns_input_format_data['X_star'], data['U_star'][:, 0, 0], 1,

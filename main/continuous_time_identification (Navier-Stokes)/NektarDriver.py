@@ -5,6 +5,7 @@ import fileinput
 import VtkDataReader
 import ConfigManager
 import SimulationParameterManager
+import ActiveLearningUtilities
 
 
 def substitute_text_in_file(filename, text_to_replace, replacement_text):
@@ -125,14 +126,17 @@ class NektarDriver(object):
 
 
 if __name__ == '__main__':
-    base_working_dir = r'/home/chris/WorkData/nektar++/actual/'
-    reference_data_subfolder = r'tube_10mm_diameter_pt2Mesh_correctViscosity'
-    ref_data_subfolder_template = reference_data_subfolder + r'_{}'
-    t_parameter = 5.0
-    r_parameter = 4.0
+    base_working_dir = r'/home/chris/WorkData/nektar++/actual/bezier'
+    reference_data_subfolder = r'basic'
+    simulation_subfolder_template = reference_data_subfolder + r'_t{}_r{}/'
+    vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
+    t_parameter = 2.0
+    r_parameter = -1.15
 
     parameter_container = SimulationParameterManager.SimulationParameterContainer(t_parameter, r_parameter)
 
+    logger = ActiveLearningUtilities.create_logger('SelfTeachingDriver')
+
     driver = NektarDriver(base_working_dir, reference_data_subfolder,
-                          ref_data_subfolder_template, 'tube10mm_diameter_1pt0mesh')
+                          simulation_subfolder_template, vtu_and_xml_file_basename, logger)
     driver.run_simulation(parameter_container)

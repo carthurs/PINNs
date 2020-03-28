@@ -312,7 +312,8 @@ def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_m
     return
 
 def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fieldname, output_filename_tag='',
-                                        xrange=None, yrange=None, sim_dir_and_parameter_tuples_picklefile=None):
+                                        xrange=None, yrange=None, sim_dir_and_parameter_tuples_picklefile=None,
+                                        colourscale_range=None):
     scatter_x = []
     scatter_y = []
     scatter_colour = []
@@ -323,10 +324,15 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
 
     plt.figure(90)
 
-    plt.scatter(scatter_x, scatter_y, c=scatter_colour, vmin=min(scatter_colour), vmax=max(scatter_colour), cmap='cividis', s=250)
+    if colourscale_range is None:
+        plt.scatter(scatter_x, scatter_y, c=scatter_colour, vmin=min(scatter_colour), vmax=max(scatter_colour),
+                    cmap='cividis', s=250)
+    else:
+        plt.scatter(scatter_x, scatter_y, c=scatter_colour, vmin=colourscale_range[0], vmax=colourscale_range[1],
+                    cmap='cividis', s=250)
     plt.colorbar()
 
-    plot_title = 'Integrated Errors in {}, Step {}'.format(fieldname, output_filename_tag)
+    plot_title = 'L2 Errors in {}, Step {}'.format(fieldname, output_filename_tag)
     plot_title.replace('_', ' ')
     plt.title(plot_title)
 
@@ -421,7 +427,7 @@ if __name__ == '__main__':
     plot_all_figures = True
     # saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
     # pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
-    model_index_to_load = 19
+    model_index_to_load = 61
     data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data/'
     saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
     pickled_model_filename = os.path.join(data_root, 'saved_model_{}.pickle'.format(model_index_to_load))
