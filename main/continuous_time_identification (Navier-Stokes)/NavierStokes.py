@@ -588,6 +588,101 @@ def load_and_evaluate_model_at_point(point, pickled_model_filename, saved_tf_mod
     return prediction
 
 
+class BoundaryErrorModes(object):
+    VS_ANALYTIC_BC = 1
+    VS_FEM_SOLUTION = 2
+
+
+def get_model_error_on_boundary(pickled_model_filename, saved_tf_model_filename,
+                                max_optimizer_iterations_in, test_vtu_filename,
+                                test_parameters_container,
+                                master_model_data_root_path,
+                                inflow_lambda,
+                                mode=BoundaryErrorModes.VS_ANALYTIC_BC):
+
+    vtk_reader = VtkDataReader.VtkDataReader(test_vtu_filename,
+                                             test_parameters_container,
+                                             master_model_data_root_path
+                                             )
+
+    model_test_input = vtk_reader.get_test_data(VtkDataReader.VtkDataReader.MODE_UNSTRUCTURED)
+
+    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
+    prediction = evaluate_solution(model, model_test_input)
+
+    noslip_locations = np.where(prediction['bc_codes'] == BC.Codes.NOSLIP)
+
+    errors = dict()
+
+    if mode == BoundaryErrorModes.VS_ANALYTIC_BC:
+        u_err_squared = np.sum(
+            np.square(prediction['u_pred'][noslip_locations] - 0.0))
+
+        v_err_squared = np.sum(
+            np.square(prediction['v_pred'][noslip_locations] - 0.0))
+
+    elif mode == BoundaryErrorModes.VS_FEM_SOLUTION:
+        u_err_squared = np.sum(
+            np.square(prediction['u_pred'][noslip_locations] - model_test_input['u'][noslip_locations]))
+
+        v_err_squared = np.sum(
+            np.square(prediction['v_pred'][noslip_locations] - model_test_input['v'][noslip_locations]))
+
+    else:
+        raise RuntimeError("Unknown mode set in get_model_error_on_boundary.")
+
+    velocity_error = np.sqrt(u_err_squared + v_err_squared) / np.sum(noslip_locations)
+    errors['noslip_velocity'] = velocity_error
+
+    p_err_squared = np.sum(
+        np.square(prediction['p_pred'][noslip_locations] - model_test_input['p'][noslip_locations])) / np.sum(
+        noslip_locations)
+    pressure_error = np.sqrt(p_err_squared)
+
+    errors['noslip_pressure'] = pressure_error
+
+    boundary_node_count = 0
+    inflow_squared_velocity_error_accumulator = 0
+    inflow_squared_pressure_error_accumulator = 0
+    for index, node_code in enumerate(prediction['bc_codes']):
+        if node_code == BC.Codes.INFLOW:
+            boundary_node_count += 1
+
+            if mode == BoundaryErrorModes.VS_ANALYTIC_BC:
+                node_x = prediction['x'][index]
+                node_y = prediction['y'][index]
+                inflow_bc = inflow_lambda(node_x, node_y)
+
+                inflow_squared_velocity_error_accumulator += np.square(prediction['u_pred'][index] - inflow_bc[0]) + np.square(
+                    prediction['v_pred'][index] - inflow_bc[1])
+
+            elif mode == BoundaryErrorModes.VS_FEM_SOLUTION:
+                inflow_squared_velocity_error_accumulator += np.square(
+                    prediction['u_pred'][index] - model_test_input['u'][index]) + np.square(
+                    prediction['v_pred'][index] - model_test_input['v'][index])
+
+                # inflow_squared_velocity_error_accumulator += np.square(
+                #     prediction['p_pred'][index] - model_test_input['p'][index]) + np.square(
+                #     prediction['v_pred'][index] - model_test_input['v'][index])
+            else:
+                raise RuntimeError("Unknown mode set in get_model_error_on_boundary.")
+
+    inflow_velocity_error = np.sqrt(inflow_squared_velocity_error_accumulator) / boundary_node_count
+
+    errors['inflow_velocity_error'] = inflow_velocity_error[0]
+
+    return errors
+
+
+def get_model_prediction(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in,
+                         model_test_input):
+
+    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
+    prediction = evaluate_solution(model, model_test_input)
+
+    return prediction
+
+
 def load_and_evaluate_model_against_full_solution(pickled_model_filename, saved_tf_model_filename,
                                                   max_optimizer_iterations_in,
                                                   true_density_value, true_viscosity_value, test_vtu_filename,
@@ -596,16 +691,16 @@ def load_and_evaluate_model_against_full_solution(pickled_model_filename, saved_
     config_manager = ConfigManager.ConfigManager()
     master_model_data_root_path = config_manager.get_master_model_data_root_path()
 
-    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
-
     vtk_reader = VtkDataReader.VtkDataReader(test_vtu_filename,
-                                            test_parameters_container,
-                                            master_model_data_root_path
-                                            )
+                                             test_parameters_container,
+                                             master_model_data_root_path
+                                             )
 
     test_data = vtk_reader.get_test_data(VtkDataReader.VtkDataReader.MODE_UNSTRUCTURED)
 
-    prediction = evaluate_solution(model, test_data)
+    prediction = get_model_prediction(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in,
+                                      test_data)
+
     errors_out = compute_errors(test_data, prediction, true_density_value, true_viscosity_value)
 
     vtk_reader.save_prediction_and_errors_to_vtk_mesh(prediction)
@@ -668,6 +763,7 @@ def evaluate_solution(model, test_data):
     prediction['y'] = test_data['y']
     prediction['t'] = test_data['t']
     prediction['r'] = test_data['r']
+    prediction['bc_codes'] = test_data['bc_codes']
 
     return prediction
 
@@ -1087,33 +1183,87 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # savefig('./figures/NavierStokes_prediction')
 
 
+def evaluate_all_boundary_errors():
+    for model_index_to_load in range(1, 62, 5):
+        max_optimizer_iterations = 50000
+        data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data/'
+        saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
+        pickled_model_filename = os.path.join(data_root, 'saved_model_{}.pickle'.format(model_index_to_load))
+
+        config_manager = ConfigManager.ConfigManager()
+        nektar_data_root_path = config_manager.get_nektar_data_root_path()
+        reference_data_subfolder = r'basic'
+        simulation_subfolder_template = reference_data_subfolder + r'_t{}_r{}/'
+        vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
+        master_model_data_root_path = config_manager.get_master_model_data_root_path()
+
+        test_vtu_filename_template_without_extension = (nektar_data_root_path + simulation_subfolder_template +
+                                                        vtu_and_xml_file_basename + r'_using_points_from_xml')
+
+        simulation_parameter_manager = SPM.SimulationParameterManager(-2.0, 2.0, 13)
+
+        gathered_errors = dict()
+
+        for parameters_container in simulation_parameter_manager.all_parameter_points():
+            test_vtu_filename_without_extension = test_vtu_filename_template_without_extension.format(
+                parameters_container.get_t(), parameters_container.get_r())
+
+            test_vtu_filename = test_vtu_filename_without_extension + '.vtu'
+
+            inflow_lambda = lambda x, y: ((10.0 - y) * y / 25.0 * parameters_container.get_t(), 0.0)
+
+            # fem_err = get_model_error_on_boundary(pickled_model_filename, saved_tf_model_filename,
+            #                                   max_optimizer_iterations, test_vtu_filename,
+            #                                   parameters_container,
+            #                                   master_model_data_root_path,
+            #                                   inflow_lambda,
+            #                                   mode=BoundaryErrorModes.VS_FEM_SOLUTION)
+            #
+            # print('vs. FEM error:', fem_err)
+
+            analytic_err = get_model_error_on_boundary(pickled_model_filename, saved_tf_model_filename,
+                                                       max_optimizer_iterations, test_vtu_filename,
+                                                       parameters_container,
+                                                       master_model_data_root_path,
+                                                       inflow_lambda,
+                                                       mode=BoundaryErrorModes.VS_ANALYTIC_BC)
+
+            print('vs. analytic error:', parameters_container, analytic_err)
+            gathered_errors[parameters_container] = analytic_err
+
+        with open('boundary_errors_step_{}.pickle'.format(model_index_to_load), 'wb') as outfile:
+            pickle.dump(gathered_errors, outfile)
+
+
 if __name__ == "__main__":
-    sim_dir_and_parameter_tuple = (r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0/tube_bezier_1pt0mesh', 0.0)
-    additional_nametag = 'working_500TrainingDatapoints'
-    num_training_iterations = 100000
-    max_optimizer_iterations = 50000  # 50000
-    use_pressure_reference_in_training = True
-    vtu_data_file_name = 'tube_bezier_1pt0mesh'
-    savefile_tag = 4
-    number_of_hidden_layers = 4
-    true_viscosity = 0.004
-    true_density = 0.00106
+    # sim_dir_and_parameter_tuple = (r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0/tube_bezier_1pt0mesh', 0.0)
+    # additional_nametag = 'working_500TrainingDatapoints'
+    # num_training_iterations = 100000
+    # max_optimizer_iterations = 50000  # 50000
+    # use_pressure_reference_in_training = True
+    # vtu_data_file_name = 'tube_bezier_1pt0mesh'
+    # savefile_tag = 4
+    # number_of_hidden_layers = 4
+    # true_viscosity = 0.004
+    # true_density = 0.00106
+    #
+    # if use_pressure_reference_in_training:
+    #     file_name_tag = vtu_data_file_name + additional_nametag + "_zero_ref_pressure.pickle"
+    # else:
+    #     file_name_tag = vtu_data_file_name + additional_nametag + ""
+    #
+    # file_name_tag = '{}_{}_layers'.format(file_name_tag, number_of_hidden_layers+2)
+    #
+    # input_pickle_file_template = 'retrained{{}}_retrained3_retrained2_retrained_trained_model_nonoise_{}{}.pickle'.format(
+    #     num_training_iterations, file_name_tag)
+    # input_saved_model_template = 'retrained{{}}_retrained3_retrained2_retrained_trained_model_nonoise_{}{}.tf'.format(
+    #     num_training_iterations, file_name_tag)
+    #
+    # N_train_in = 5000
+    #
+    # run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, num_training_iterations,
+    #                use_pressure_reference_in_training, number_of_hidden_layers, max_optimizer_iterations,
+    #                N_train_in, true_viscosity, true_density,
+    #                load_existing_model=False, additional_simulation_data=[sim_dir_and_parameter_tuple])
 
-    if use_pressure_reference_in_training:
-        file_name_tag = vtu_data_file_name + additional_nametag + "_zero_ref_pressure.pickle"
-    else:
-        file_name_tag = vtu_data_file_name + additional_nametag + ""
-
-    file_name_tag = '{}_{}_layers'.format(file_name_tag, number_of_hidden_layers+2)
-
-    input_pickle_file_template = 'retrained{{}}_retrained3_retrained2_retrained_trained_model_nonoise_{}{}.pickle'.format(
-        num_training_iterations, file_name_tag)
-    input_saved_model_template = 'retrained{{}}_retrained3_retrained2_retrained_trained_model_nonoise_{}{}.tf'.format(
-        num_training_iterations, file_name_tag)
-
-    N_train_in = 5000
-
-    run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, num_training_iterations,
-                   use_pressure_reference_in_training, number_of_hidden_layers, max_optimizer_iterations,
-                   N_train_in, true_viscosity, true_density,
-                   load_existing_model=False, additional_simulation_data=[sim_dir_and_parameter_tuple])
+    evaluate_all_boundary_errors()
