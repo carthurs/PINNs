@@ -12,6 +12,7 @@ import SimulationParameterManager as SPM
 import multiprocessing
 import ConfigManager
 import matplotlib.pyplot as plt
+import pathlib
 
 if sys.platform.lower() == "win32":
     os.system('color')
@@ -311,9 +312,10 @@ def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_m
 
     return
 
+
 def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fieldname, output_filename_tag='',
                                         xrange=None, yrange=None, sim_dir_and_parameter_tuples_picklefile=None,
-                                        colourscale_range=None):
+                                        colourscale_range=None, subfolder_name=pathlib.Path('')):
     scatter_x = []
     scatter_y = []
     scatter_colour = []
@@ -332,7 +334,16 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
                     cmap='cividis', s=250)
     plt.colorbar()
 
-    plot_title = 'L2 Errors in {}, Step {}'.format(fieldname, output_filename_tag)
+    title_map = {'inflow_velocity_error': 'Inflow Velocity',
+                 'noslip_velocity': 'Wall Velocity',
+                 'noslip_pressure': 'Wall Pressure'}
+    if fieldname in title_map:
+        title_tag = title_map[fieldname]
+    else:
+        title_tag = fieldname.replace('_', ' ')
+
+
+    plot_title = 'L2 Errors in {}, Iteration {}'.format(title_tag, output_filename_tag)
     plot_title.replace('_', ' ')
     plt.title(plot_title)
 
@@ -350,8 +361,8 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
         params_with_data_scatter_y = parameters['r']
         plt.scatter(params_with_data_scatter_x, params_with_data_scatter_y, c='red', s=20)
 
-    figure_savefile = r'plotted_integrated_errors_{}_{}.png'.format(fieldname, output_filename_tag)
-    plt.savefig(figure_savefile)
+    figure_savefile = subfolder_name / r'plotted_integrated_errors_{}_{}.png'.format(fieldname, output_filename_tag)
+    plt.savefig(str(figure_savefile))
     plt.close()
 
 

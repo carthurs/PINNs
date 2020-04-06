@@ -1184,7 +1184,7 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
 
 
 def evaluate_all_boundary_errors():
-    for model_index_to_load in range(1, 62, 5):
+    for model_index_to_load in tqdm.tqdm(range(1, 62, 5)):
         max_optimizer_iterations = 50000
         data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data/'
         saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
@@ -1204,7 +1204,9 @@ def evaluate_all_boundary_errors():
 
         gathered_errors = dict()
 
-        for parameters_container in simulation_parameter_manager.all_parameter_points():
+        for parameters_container in tqdm.tqdm(simulation_parameter_manager.all_parameter_points(),
+                                              total=simulation_parameter_manager.get_num_parameter_points()):
+
             test_vtu_filename_without_extension = test_vtu_filename_template_without_extension.format(
                 parameters_container.get_t(), parameters_container.get_r())
 
@@ -1231,8 +1233,15 @@ def evaluate_all_boundary_errors():
             print('vs. analytic error:', parameters_container, analytic_err)
             gathered_errors[parameters_container] = analytic_err
 
-        with open('boundary_errors_step_{}.pickle'.format(model_index_to_load), 'wb') as outfile:
+        with open(config_manager.get_boundary_errors_filename_template().format(model_index_to_load), 'wb') as outfile:
             pickle.dump(gathered_errors, outfile)
+
+
+def read_boundary_errors(filename_template, model_index_to_load):
+    with open(filename_template.format(model_index_to_load), 'rb') as infile:
+        boundary_errors = pickle.load(infile)
+
+    return boundary_errors
 
 
 if __name__ == "__main__":

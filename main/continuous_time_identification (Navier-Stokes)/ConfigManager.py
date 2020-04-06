@@ -13,6 +13,7 @@ class ConfigManager(object):
     MASTER_MODEL_DATA_ROOT_PATH = 'master_model_data_root_path'
     GMSH_PATH = 'gmsh_path'
     PARAVIEW_PYTHON_INTERPRETER = 'paraview_python_interpreter'
+    BOUNDARY_ERRORS_FILENAME_TEMPLATE = 'boundary_errors_filename_template'
 
     def __init__(self):
         with open('config.json', 'r') as infile:
@@ -55,3 +56,8 @@ class ConfigManager(object):
 
     def get_paraview_python_interpreter(self):
         return self.config_data[ConfigManager.PARAVIEW_PYTHON_INTERPRETER]
+
+    def get_boundary_errors_filename_template(self):
+        return self.config_data[ConfigManager.BOUNDARY_ERRORS_FILENAME_TEMPLATE]
+
+
