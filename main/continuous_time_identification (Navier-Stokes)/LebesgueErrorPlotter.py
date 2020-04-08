@@ -35,7 +35,6 @@ def get_error_integrals(config_manager, test_vtu_filename_without_extension):
 
 def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_template_without_extension,
                                            pickled_model_filename_post, saved_tf_model_filename_post,
-                                           max_optimizer_iterations,
                                            true_density, true_viscosity,
                                            config_manager, picklefile_name, logger,
                                            nektar_driver,
@@ -63,7 +62,6 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
                 nektar_driver.run_simulation(parameters_container)
 
             NavierStokes.load_and_evaluate_model_against_full_solution(pickled_model_filename_post, saved_tf_model_filename_post,
-                                                                       max_optimizer_iterations,
                                                                        true_density, true_viscosity, test_vtu_filename,
                                                                        parameters_container)
 
@@ -193,8 +191,8 @@ def run_plotting(simulation_parameters_index, colourscale_range=None):
     config_manager = ConfigManager.ConfigManager()
     nektar_data_root_path = config_manager.get_nektar_data_root_path()
     reference_data_subfolder = r'basic'
-    simulation_subfolder_template = reference_data_subfolder + r'_t{}_r{}/'
-    vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
+    simulation_subfolder_template = config_manager.get_mesh_data_folder_template()
+    vtu_and_xml_file_basename = config_manager.get_vtu_and_xml_file_basename()
 
     test_vtu_filename_template_without_extension = (nektar_data_root_path + simulation_subfolder_template +
                                                     vtu_and_xml_file_basename + r'_using_points_from_xml')
@@ -216,12 +214,9 @@ def run_plotting(simulation_parameters_index, colourscale_range=None):
                                               vtu_and_xml_file_basename,
                                               logger)
 
-    max_optimizer_iterations = 50000
-
     error_integral_range = scatterplot_used_datapoints_and_errors(parameter_manager,
                                                                   test_vtu_filename_template_without_extension,
                                                                   pickled_model_filename, saved_tf_model_filename,
-                                                                  max_optimizer_iterations,
                                                                   true_density, true_viscosity,
                                                                   config_manager, picklefile_name, logger,
                                                                   nektar_driver,

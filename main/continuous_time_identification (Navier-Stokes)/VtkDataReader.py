@@ -272,7 +272,7 @@ class VtkDataReader(object):
 
         return return_data
 
-    def get_test_data(self, mode):
+    def get_test_data(self, mode, domain_only=False):
         raw_data_for_test = self.get_data_by_mode(mode)
 
         X_star = raw_data_for_test['X_star']  # N x 2
@@ -286,11 +286,12 @@ class VtkDataReader(object):
         test_data['t'] = np.ones((N, 1)) * self.time_value
         test_data['r'] = np.ones((N, 1)) * self.curvature_value
 
-        U_star = raw_data_for_test['U_star']  # num_parameter_slices x 2 x T
-        test_data['u'] = U_star[:, 0]
-        test_data['v'] = U_star[:, 1]
+        if not domain_only:
+            U_star = raw_data_for_test['U_star']  # num_parameter_slices x 2 x T
+            test_data['u'] = U_star[:, 0]
+            test_data['v'] = U_star[:, 1]
 
-        test_data['p'] = raw_data_for_test['p_star']
+            test_data['p'] = raw_data_for_test['p_star']
 
         test_data['bc_codes'] = raw_data_for_test['bc_codes']
         return test_data
@@ -340,7 +341,10 @@ class VtkDataReader(object):
         fig = go.Figure(data=[velocity_plot, pressure_plot, bc_codes_plot])
         fig.show()
 
-    def save_prediction_and_errors_to_vtk_mesh(self, prediction):
+    def save_prediction_and_errors_to_vtk_mesh(self, prediction, fem_array_names_to_add=('u', 'v', 'p')):
+
+        if fem_array_names_to_add is None:
+            fem_array_names_to_add = ()
 
         filename_without_extension, ignored_extension = os.path.splitext(self.full_filename)
 
@@ -361,7 +365,6 @@ class VtkDataReader(object):
 
         compute_nodewise_squared_difference = lambda numpy_array1, numpy_array2: np.square(numpy_array1-numpy_array2)
 
-        fem_array_names_to_add = ['u', 'v', 'p']
         for array_name in fem_array_names_to_add:
             if array_name == 'p':
                 raw_p_data = self._get_read_data_as_vtk_array(array_name)
@@ -533,8 +536,12 @@ if __name__ == '__main__':
     #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh.xml',
     #                                   r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.5/tube_bezier_1pt0mesh_using_points_from_xml.vtu')
 
-    param_container = SPM.SimulationParameterContainer(2.0, -1.15)
-    my_reader = VtkDataReader(r'/home/chris/WorkData/nektar++/actual/bezier/basic_t{}_r{}/tube_bezier_1pt0mesh_using_points_from_xml.vtu'.format(param_container.get_t(), param_container.get_r()),
+    config_manager = ConfigManager.ConfigManager()
+    template = config_manager.get_nektar_data_root_path() + config_manager.get_mesh_data_folder_template() + \
+               r'/tube_bezier_1pt0mesh_using_points_from_xml.vtu'
+
+    param_container = SPM.SimulationParameterContainer(2.0, -1.9)
+    my_reader = VtkDataReader(template.format(param_container.get_t(), param_container.get_r()),
                               param_container,
                               None)
 
@@ -550,7 +557,8 @@ if __name__ == '__main__':
     # X_star = data['X_star']  # N x 2
     #
 
-    print("press:", my_reader.evaluate_field_at_point(5.0, 5.0, 'p'))
+    print("start pressure:", my_reader.evaluate_field_at_point(5.0, 5.0, 'p'))
+    print("end pressure:", my_reader.evaluate_field_at_point(95.0, 5.0, 'p'))
     print("grad:", my_reader.evaluate_field_at_point(5.0, 5.0, 'p') - my_reader.evaluate_field_at_point(95.0, 5.0, 'p'))
     # my_reader.plotly_plot_mesh()
 

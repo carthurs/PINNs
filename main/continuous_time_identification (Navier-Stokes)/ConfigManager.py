@@ -1,4 +1,5 @@
 import json
+import os
 
 
 class ConfigManager(object):
@@ -14,9 +15,11 @@ class ConfigManager(object):
     GMSH_PATH = 'gmsh_path'
     PARAVIEW_PYTHON_INTERPRETER = 'paraview_python_interpreter'
     BOUNDARY_ERRORS_FILENAME_TEMPLATE = 'boundary_errors_filename_template'
+    MESH_DATA_FOLDER_TEMPLATE = 'mesh_data_folder_template'
+    VTU_AND_XML_FILE_BASENAME = 'vtu_and_xml_file_basename'
 
-    def __init__(self):
-        with open('config.json', 'r') as infile:
+    def __init__(self, config_root=os.getcwd()):
+        with open(config_root + '/config.json', 'r') as infile:
             self.config_data = json.loads(infile.read())
 
     def get_field_convert_exe(self):
@@ -60,4 +63,8 @@ class ConfigManager(object):
     def get_boundary_errors_filename_template(self):
         return self.config_data[ConfigManager.BOUNDARY_ERRORS_FILENAME_TEMPLATE]
 
+    def get_mesh_data_folder_template(self):
+        return self.config_data[ConfigManager.MESH_DATA_FOLDER_TEMPLATE]
 
+    def get_vtu_and_xml_file_basename(self):
+        return self.config_data[ConfigManager.VTU_AND_XML_FILE_BASENAME]

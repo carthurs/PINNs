@@ -28,6 +28,8 @@ import BoundaryConditionCodes as BC
 import SimulationParameterManager as SPM
 import logging
 import ConfigManager
+import Meshing
+import ActiveLearningUtilities
 
 # np.random.seed(1234)
 # tf.set_random_seed(1234)
@@ -566,11 +568,12 @@ def train_and_pickle_model(tensorboard_log_directory_in, model_in, number_of_tra
         log_message(error_message)
 
 
-def _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in):
+def _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in=None):
     tf.reset_default_graph()
     with open(pickled_model_filename, 'rb') as pickled_model_file:
         loaded_model = pickle.load(pickled_model_file)
-        loaded_model.set_max_optimizer_iterations(max_optimizer_iterations_in)
+        if max_optimizer_iterations_in:
+            loaded_model.set_max_optimizer_iterations(max_optimizer_iterations_in)
 
     loaded_model.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
                                                   log_device_placement=False))
@@ -582,7 +585,7 @@ def _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_i
 def load_and_evaluate_model_at_point(point, pickled_model_filename, saved_tf_model_filename,
                                      max_optimizer_iterations_in):
 
-    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
+    model = _load_model(pickled_model_filename, saved_tf_model_filename)
     prediction = evaluate_solution(model, point)
 
     return prediction
@@ -607,7 +610,7 @@ def get_model_error_on_boundary(pickled_model_filename, saved_tf_model_filename,
 
     model_test_input = vtk_reader.get_test_data(VtkDataReader.VtkDataReader.MODE_UNSTRUCTURED)
 
-    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
+    model = _load_model(pickled_model_filename, saved_tf_model_filename)
     prediction = evaluate_solution(model, model_test_input)
 
     noslip_locations = np.where(prediction['bc_codes'] == BC.Codes.NOSLIP)
@@ -674,20 +677,15 @@ def get_model_error_on_boundary(pickled_model_filename, saved_tf_model_filename,
     return errors
 
 
-def get_model_prediction(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in,
-                         model_test_input):
+def get_model_prediction(pickled_model_filename, saved_tf_model_filename, model_test_input):
 
-    model = _load_model(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in)
+    model = _load_model(pickled_model_filename, saved_tf_model_filename)
     prediction = evaluate_solution(model, model_test_input)
 
     return prediction
 
 
-def load_and_evaluate_model_against_full_solution(pickled_model_filename, saved_tf_model_filename,
-                                                  max_optimizer_iterations_in,
-                                                  true_density_value, true_viscosity_value, test_vtu_filename,
-                                                  test_parameters_container):
-
+def get_test_data_from_vtu(test_vtu_filename, test_parameters_container, domain_only=False):
     config_manager = ConfigManager.ConfigManager()
     master_model_data_root_path = config_manager.get_master_model_data_root_path()
 
@@ -696,16 +694,60 @@ def load_and_evaluate_model_against_full_solution(pickled_model_filename, saved_
                                              master_model_data_root_path
                                              )
 
-    test_data = vtk_reader.get_test_data(VtkDataReader.VtkDataReader.MODE_UNSTRUCTURED)
+    test_data = vtk_reader.get_test_data(VtkDataReader.VtkDataReader.MODE_UNSTRUCTURED, domain_only=domain_only)
+    return test_data
 
-    prediction = get_model_prediction(pickled_model_filename, saved_tf_model_filename, max_optimizer_iterations_in,
-                                      test_data)
 
-    errors_out = compute_errors(test_data, prediction, true_density_value, true_viscosity_value)
+def save_prediction_to_vtu(test_vtu_filename, test_parameters_container, prediction, fem_array_names_to_add=('u', 'v', 'p')):
+    config_manager = ConfigManager.ConfigManager()
+    master_model_data_root_path = config_manager.get_master_model_data_root_path()
 
-    vtk_reader.save_prediction_and_errors_to_vtk_mesh(prediction)
+    vtk_reader = VtkDataReader.VtkDataReader(test_vtu_filename,
+                                             test_parameters_container,
+                                             master_model_data_root_path
+                                             )
 
-    print("errors_out:", errors_out)
+    vtk_reader.save_prediction_and_errors_to_vtk_mesh(prediction, fem_array_names_to_add=fem_array_names_to_add)
+
+
+def load_and_evaluate_model_against_full_solution(pickled_model_filename, saved_tf_model_filename,
+                                                  true_density_value, true_viscosity_value, test_vtu_filename,
+                                                  test_parameters_container,
+                                                  generate_vtu_if_needed=False,
+                                                  domain_only=False):
+
+    if generate_vtu_if_needed and not os.path.exists(test_vtu_filename):
+        config_manager = ConfigManager.ConfigManager()
+        data_path = config_manager.get_nektar_data_root_path()
+        simulation_folder_template = config_manager.get_mesh_data_folder_template()
+        vtu_and_xml_file_basename = config_manager.get_vtu_and_xml_file_basename()
+
+        # generate vtu
+        mesh_xml_file_name_template = data_path + simulation_folder_template + '/' + vtu_and_xml_file_basename + '.xml'
+        mesh_xml_file_name = mesh_xml_file_name_template.format(test_parameters_container.get_t(), test_parameters_container.get_r())
+
+        vtu_file_name_template = data_path + simulation_folder_template + '/' + vtu_and_xml_file_basename + '.vtu'
+        vtu_file_name = vtu_file_name_template.format(test_parameters_container.get_t(), test_parameters_container.get_r())
+
+        mesh_generator = Meshing.MeshGenerator(mesh_xml_file_name, test_parameters_container)
+        mesh_generator.generate_in_correct_folder(vtu_additional_file_name=vtu_file_name)
+
+        ActiveLearningUtilities.convert_xml_to_vtu(mesh_xml_file_name, test_vtu_filename)
+
+
+    test_data = get_test_data_from_vtu(test_vtu_filename, test_parameters_container, domain_only=domain_only)
+
+    prediction = get_model_prediction(pickled_model_filename, saved_tf_model_filename, test_data)
+
+    errors_out = None
+
+    if domain_only:
+        save_prediction_to_vtu(test_vtu_filename, test_parameters_container, prediction, fem_array_names_to_add=None)
+    else:
+        save_prediction_to_vtu(test_vtu_filename, test_parameters_container, prediction)
+        compute_errors(test_data, prediction, true_density_value, true_viscosity_value)
+        print("errors_out:", errors_out)
+
     return errors_out
 
 
@@ -763,7 +805,10 @@ def evaluate_solution(model, test_data):
     prediction['y'] = test_data['y']
     prediction['t'] = test_data['t']
     prediction['r'] = test_data['r']
-    prediction['bc_codes'] = test_data['bc_codes']
+    try:
+        prediction['bc_codes'] = test_data['bc_codes']
+    except KeyError:
+        warnings.warn('Key bc_codes was not present in this test_data.')
 
     return prediction
 
@@ -1192,9 +1237,8 @@ def evaluate_all_boundary_errors():
 
         config_manager = ConfigManager.ConfigManager()
         nektar_data_root_path = config_manager.get_nektar_data_root_path()
-        reference_data_subfolder = r'basic'
-        simulation_subfolder_template = reference_data_subfolder + r'_t{}_r{}/'
-        vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
+        simulation_subfolder_template = config_manager.get_mesh_data_folder_template()
+        vtu_and_xml_file_basename = config_manager.get_vtu_and_xml_file_basename()
         master_model_data_root_path = config_manager.get_master_model_data_root_path()
 
         test_vtu_filename_template_without_extension = (nektar_data_root_path + simulation_subfolder_template +
@@ -1244,6 +1288,27 @@ def read_boundary_errors(filename_template, model_index_to_load):
     return boundary_errors
 
 
+def predict_and_save_to_vtu_file(parameters_container, step_index):
+    config_manager = ConfigManager.ConfigManager()
+
+    pickled_model_filename = config_manager.get_master_model_data_root_path() + r'saved_model_{}.pickle'.format(step_index)
+    saved_tf_model_filename = config_manager.get_master_model_data_root_path() + r'saved_model_{}.tf'.format(step_index)
+
+    true_viscosity = 0.004
+    true_density = 0.00106
+
+    template = config_manager.get_nektar_data_root_path() + config_manager.get_mesh_data_folder_template() + \
+               r'/tube_bezier_1pt0mesh.vtu'
+    test_vtu_filename = template.format(parameters_container.get_t(), parameters_container.get_r())
+
+
+    load_and_evaluate_model_against_full_solution(pickled_model_filename,
+                                                  saved_tf_model_filename,
+                                                  true_density, true_viscosity, test_vtu_filename,
+                                                  parameters_container, generate_vtu_if_needed=True,
+                                                  domain_only=True)
+
+
 if __name__ == "__main__":
     # sim_dir_and_parameter_tuple = (r'/home/chris/WorkData/nektar++/actual/bezier/basic_t0.0/tube_bezier_1pt0mesh', 0.0)
     # additional_nametag = 'working_500TrainingDatapoints'
@@ -1275,4 +1340,10 @@ if __name__ == "__main__":
     #                N_train_in, true_viscosity, true_density,
     #                load_existing_model=False, additional_simulation_data=[sim_dir_and_parameter_tuple])
 
-    evaluate_all_boundary_errors()
+
+    # evaluate_all_boundary_errors()
+
+
+    param_container = SPM.SimulationParameterContainer(2.1, 2.1)
+    step_index = 31
+    predict_and_save_to_vtu_file(param_container, step_index)

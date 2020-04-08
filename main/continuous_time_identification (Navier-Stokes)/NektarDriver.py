@@ -6,20 +6,8 @@ import VtkDataReader
 import ConfigManager
 import SimulationParameterManager
 import ActiveLearningUtilities
-
-
-def substitute_text_in_file(filename, text_to_replace, replacement_text):
-    for line in fileinput.input(filename, inplace=True):
-        print(line.replace(text_to_replace, replacement_text), end="")
-
-
-# Checks if nektar mesh xml file is compressed
-def is_compressed(filename):
-    with open(filename, 'r') as infile:
-        for line in infile:
-            if "COMPRESSED" in line:
-                return True
-    return False
+from pytictoc import TicToc
+import Meshing
 
 
 class NektarDriver(object):
@@ -40,21 +28,12 @@ class NektarDriver(object):
         self._prepare_simulation_files(param_container, generate_vtu_without_solution_data=True)
 
     def _prepare_simulation_files(self, parameters_container, generate_vtu_without_solution_data=False):
-        starting_dir = os.getcwd()
+        generator = Meshing.MeshGenerator(self.mesh_xml_file_name, parameters_container, logger=self.logger)
 
-        os.chdir(self.nektar_data_root_path)
-        simulation_subfolder = self.simulation_subfolder_template.format(parameters_container.get_t(),
-                                                                         parameters_container.get_r())
-
-        distutils.dir_util.copy_tree(self.reference_data_subfolder, simulation_subfolder)
-        os.chdir(simulation_subfolder)
-        self._generate_mesh(parameters_container.get_r())
-        if generate_vtu_without_solution_data and not os.path.exists(self.vtu_file_name):
-            subprocess.run(['mpirun', '-np', '1',
-                            self.config_manager.get_field_convert_exe(),
-                            self.mesh_xml_file_name, self.vtu_file_name]).check_returncode()
-
-        os.chdir(starting_dir)
+        if generate_vtu_without_solution_data:
+            generator.generate_in_correct_folder(vtu_additional_file_name=self.vtu_file_name)
+        else:
+            generator.generate_in_correct_folder()
 
     def run_simulation(self, parameters_container):
         self._prepare_simulation_files(parameters_container)
@@ -98,7 +77,8 @@ class NektarDriver(object):
         os.chdir(self.initial_working_path)
 
     def _set_simulation_inflow_parameter(self, t_parameter):
-        substitute_text_in_file('conditions.xml', 'y*(10-y)/25', 'y*(10-y)/25*{}'.format(t_parameter))
+        ActiveLearningUtilities.substitute_text_in_file('conditions.xml', 'y*(10-y)/25',
+                                                        'y*(10-y)/25*{}'.format(t_parameter))
 
     def get_vtu_file_without_extension(self, parameters_container):
         path_to_vtu_file_without_file_extension = self.nektar_data_root_path +\
@@ -108,30 +88,14 @@ class NektarDriver(object):
                                                   self.vtu_file_name.split('.')[0]
         return path_to_vtu_file_without_file_extension
 
-    def _generate_mesh(self, domain_shape_parameter):
-        if os.path.exists(self.mesh_xml_file_name) and not is_compressed(self.mesh_xml_file_name):
-            self.logger.info('Not generating mesh xml file {} because it exists already.'.format(
-                os.path.join(os.getcwd(), self.mesh_xml_file_name)))
-        else:
-            substitute_text_in_file('untitled.geo', 'curving_param = 20.0', 'curving_param = {}'.format(domain_shape_parameter))
-            meshing_process_outcome = subprocess.run([self.config_manager.get_gmsh_exe(), 'untitled.geo', '-2'])
-            self.logger.info('Return code of gmsh call was {}.'.format(meshing_process_outcome.returncode))
 
-            subprocess.run(
-                ['mpirun', '-np', '1', self.config_manager.get_nekmesh_exe(), 'untitled.msh',
-                 self.mesh_xml_file_name + ':xml:uncompress']).check_returncode()
-
-            substitute_text_in_file(self.mesh_xml_file_name, 'FIELDS="u"', 'FIELDS="u,v,p"')
-
-
-
-if __name__ == '__main__':
+def generate_parametric_solution(t_parameter, r_parameter):
     base_working_dir = r'/home/chris/WorkData/nektar++/actual/bezier'
     reference_data_subfolder = r'basic'
-    simulation_subfolder_template = reference_data_subfolder + r'_t{}_r{}/'
-    vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
-    t_parameter = 2.0
-    r_parameter = -1.15
+
+    config_manager = ConfigManager.ConfigManager()
+    simulation_subfolder_template = config_manager.get_mesh_data_folder_template()
+    vtu_and_xml_file_basename = config_manager.get_vtu_and_xml_file_basename()
 
     parameter_container = SimulationParameterManager.SimulationParameterContainer(t_parameter, r_parameter)
 
@@ -140,3 +104,16 @@ if __name__ == '__main__':
     driver = NektarDriver(base_working_dir, reference_data_subfolder,
                           simulation_subfolder_template, vtu_and_xml_file_basename, logger)
     driver.run_simulation(parameter_container)
+
+
+if __name__ == '__main__':
+    t_parameter = 2.0
+    # r_parameter = 0.0
+
+    timer = TicToc()
+    timer.tic()
+
+    for r_parameter in [-1.975]:
+        generate_parametric_solution(t_parameter, r_parameter)
+
+    timer.toc()

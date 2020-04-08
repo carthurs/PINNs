@@ -50,9 +50,9 @@ if __name__ == '__main__':
 
     nektar_data_root_path = config_manager.get_nektar_data_root_path()
     reference_data_subfolder = r'basic'
-    simulation_subfolder_template = reference_data_subfolder + r'_t{}_r{}/'
+    simulation_subfolder_template = config_manager.get_mesh_data_folder_template()
     master_model_data_root_path = config_manager.get_master_model_data_root_path()
-    vtu_and_xml_file_basename = 'tube_bezier_1pt0mesh'
+    vtu_and_xml_file_basename = config_manager.get_vtu_and_xml_file_basename()
     reference_vtu_filename_template = nektar_data_root_path + simulation_subfolder_template + \
                                         vtu_and_xml_file_basename + '.vtu'
 
@@ -192,7 +192,6 @@ if __name__ == '__main__':
                                                                     test_vtu_filename_template_without_extension,
                                                                     pickled_model_filename_post,
                                                                     saved_tf_model_filename_post,
-                                                                    max_optimizer_iterations,
                                                                     true_density, true_viscosity,
                                                                     config_manager, picklefile_name, logger,
                                                                     nektar_driver,
