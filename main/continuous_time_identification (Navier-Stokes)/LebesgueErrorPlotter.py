@@ -41,8 +41,12 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
                                            parameters_scatter_plot_filename_tag='',
                                            xrange=None,
                                            yrange=None,
-                                           colourscale_range=None):
-    integrated_errors_savefile_name = 'integrated_errors_{}.pickle'.format(parameters_scatter_plot_filename_tag)
+                                           colourscale_range=None,
+                                           output_subfolder=pathlib.Path('.')):
+
+    integrated_errors_savefile_name = str(output_subfolder /
+                                          'integrated_errors_{}.pickle'.format(parameters_scatter_plot_filename_tag))
+
 
     if os.path.exists(integrated_errors_savefile_name):
         with open(integrated_errors_savefile_name, 'rb') as infile:
@@ -74,7 +78,8 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
 
     SolutionQualityChecker.scatterplot_parameters_which_have_training_data(picklefile_name,
                                                                            output_filename_tag=parameters_scatter_plot_filename_tag,
-                                                                           xrange=xrange, yrange=yrange)
+                                                                           xrange=xrange, yrange=yrange,
+                                                                           output_folder=output_subfolder)
 
     integrated_errors_to_plot = dict()
     integrated_relative_errors_to_plot = dict()
@@ -114,13 +119,15 @@ def scatterplot_used_datapoints_and_errors(parameter_manager, test_vtu_filename_
                                                                    error_integral_field_name,
                                                                    output_filename_tag=parameters_scatter_plot_filename_tag,
                                                                    sim_dir_and_parameter_tuples_picklefile=picklefile_name,
-                                                                   colourscale_range=colourscale_range)
+                                                                   colourscale_range=colourscale_range,
+                                                                   subfolder_name=output_subfolder)
 
         # Scatterplot relative L2 errors
         SolutionQualityChecker.scatterplot_parameters_with_colours(integrated_relative_errors_to_plot[error_integral_field_name],
                                                                    error_integral_field_name,
                                                                    output_filename_tag=parameters_scatter_plot_filename_tag+'_relative',
-                                                                   sim_dir_and_parameter_tuples_picklefile=picklefile_name)
+                                                                   sim_dir_and_parameter_tuples_picklefile=picklefile_name,
+                                                                   subfolder_name=output_subfolder)
 
     return error_integral_range
 
@@ -176,8 +183,13 @@ def run_boundary_plotting(simulation_parameters_index, subfolder_name='', colour
                                                     colourscale_range=colourscale_range, subfolder_name=subfolder_name)
 
 
-def run_plotting(simulation_parameters_index, colourscale_range=None):
+def run_plotting(simulation_parameters_index, colourscale_range=None, output_subfolder=pathlib.Path('.')):
     logger = ActiveLearningUtilities.create_logger('SelfTeachingDriver')
+
+    if not os.path.exists(str(output_subfolder)):
+        os.mkdir(str(output_subfolder))
+        logger.info('Created missing output_subfolder {}'.format(output_subfolder))
+
     parameter_range_start = -2.0
     parameter_range_end = 2.0
     number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 3) + 1
@@ -224,28 +236,33 @@ def run_plotting(simulation_parameters_index, colourscale_range=None):
                                                                       simulation_parameters_index),
                                                                   xrange=(parameter_range_start, parameter_range_end),
                                                                   yrange=(parameter_range_start, parameter_range_end),
-                                                                  colourscale_range=colourscale_range)
+                                                                  colourscale_range=colourscale_range,
+                                                                  output_subfolder=output_subfolder)
 
     return error_integral_range
 
 
 if __name__ == '__main__':
-    for step in range(0, 13):
-        simulation_parameters_index = step * 5 + 1
-        run_boundary_plotting(simulation_parameters_index, subfolder_name='boundary_error_plots', colourscale_range=[0, 0.00001])
-    # all_error_integral_ranges = []
+    output_subfolder = pathlib.Path('L2_plots_5pct_training_data')
+
     # for step in range(0, 13):
     #     simulation_parameters_index = step * 5 + 1
-    #     error_integral_range = run_plotting(simulation_parameters_index, colourscale_range=[1.4457175577307878e-05, 4])
-    #     all_error_integral_ranges.append(error_integral_range)
-    #
-    # field_names = ['u', 'v', 'p']
-    # full_error_range = dict()
-    # for field_name in field_names:
-    #     full_error_range[field_name] = [10000, -10000]
-    #
-    #     for error_range in all_error_integral_ranges:
-    #         full_error_range[field_name][0] = min(full_error_range[field_name][0], error_range[field_name][0])
-    #         full_error_range[field_name][1] = max(full_error_range[field_name][1], error_range[field_name][1])
-    #
-    # print("full error ranges:", full_error_range)
+    #     run_boundary_plotting(simulation_parameters_index, subfolder_name='boundary_error_plots', colourscale_range=[0, 0.00001])
+
+    all_error_integral_ranges = []
+    for step in range(0, 13):
+        simulation_parameters_index = step * 5 + 1
+        error_integral_range = run_plotting(simulation_parameters_index, colourscale_range=[1.4457175577307878e-05, 4],
+                                            output_subfolder=output_subfolder)
+        all_error_integral_ranges.append(error_integral_range)
+
+    field_names = ['u', 'v', 'p']
+    full_error_range = dict()
+    for field_name in field_names:
+        full_error_range[field_name] = [10000, -10000]
+
+        for error_range in all_error_integral_ranges:
+            full_error_range[field_name][0] = min(full_error_range[field_name][0], error_range[field_name][0])
+            full_error_range[field_name][1] = max(full_error_range[field_name][1], error_range[field_name][1])
+
+    print("full error ranges:", full_error_range)

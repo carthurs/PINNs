@@ -540,7 +540,7 @@ if __name__ == '__main__':
     template = config_manager.get_nektar_data_root_path() + config_manager.get_mesh_data_folder_template() + \
                r'/tube_bezier_1pt0mesh_using_points_from_xml.vtu'
 
-    param_container = SPM.SimulationParameterContainer(2.0, -1.9)
+    param_container = SPM.SimulationParameterContainer(1.5, 0.0)
     my_reader = VtkDataReader(template.format(param_container.get_t(), param_container.get_r()),
                               param_container,
                               None)

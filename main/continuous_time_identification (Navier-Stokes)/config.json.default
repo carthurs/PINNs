@@ -7,7 +7,7 @@
   "composite_ids_for_inflow": ["-3"],
   "composite_ids_for_outflow": ["-4"],
   "nektar_data_root_path": "/home/chris/WorkData/nektar++/actual/bezier/",
-  "mesh_data_folder_template": "basic_t{}_r{}",
+  "mesh_data_folder_template": "basic_t{}_r{}/",
   "vtu_and_xml_file_basename": "tube_bezier_1pt0mesh",
   "master_model_data_root_path": "/home/chris/WorkData/nektar++/actual/bezier/master_data/",
   "gmsh_path": "gmsh",

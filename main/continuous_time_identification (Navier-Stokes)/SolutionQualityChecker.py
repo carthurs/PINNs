@@ -76,16 +76,20 @@ class LossLandscape(object):
         return self.data[worst_loss_row_index, 0:-1]
 
     def _compute_loss_landscape(self):
-        gathered_losses, gathered_boundary_losses = get_losses(self.pickled_model_filename, self.saved_tf_model_filename,
-                                                                        self.parameter_manager, self.data_dir_in,
-                                                                        self.vtu_file_name_template)
+        gathered_losses, gathered_boundary_losses, gathered_total_losses = get_losses(self.pickled_model_filename,
+                                                                                      self.saved_tf_model_filename,
+                                                                                      self.parameter_manager,
+                                                                                      self.data_dir_in,
+                                                                                      self.vtu_file_name_template)
 
-        summed_loss = [gathered_losses[loss_1_key] + gathered_boundary_losses[loss_2_key] for
-                       (loss_1_key, loss_2_key) in zip(gathered_losses, gathered_boundary_losses)]
+        # summed_loss = [gathered_losses[loss_1_key] + gathered_boundary_losses[loss_2_key] for
+        #                (loss_1_key, loss_2_key) in zip(gathered_losses, gathered_boundary_losses)]
 
         # loss_landscape = LossLandscape(len(t_parameter_linspace), 1)
         for index, parameter_container in enumerate(self.parameter_manager.all_parameter_points()):
-            self._insert_loss_point((parameter_container.get_t(), parameter_container.get_r()), summed_loss[index])
+            self._insert_loss_point( (parameter_container.get_t(),
+                                      parameter_container.get_r()),
+                                    gathered_losses[parameter_container])
 
         return
 
@@ -216,7 +220,7 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, parameter_manage
 
         gathered_losses = dict()
         gathered_boundary_losses = dict()
-        parameters_per_point = parameter_manager.get_parameter_dimensionality()
+        gathered_total_losses = dict()
         for parameter_point_container in tqdm.tqdm(parameter_manager.all_parameter_points(),
                                                    desc='[Computing loss over param space]',
                                                    total=parameter_manager.get_num_parameter_points()):
@@ -229,29 +233,35 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, parameter_manage
             x_star = X_star[:, 0:1]
             y_star = X_star[:, 1:2]
 
+            u_star = data['U_star'][:, 0]
+            v_star = data['U_star'][:, 1]
+
             N = X_star.shape[0]
             t_star = np.tile(data['t'], (1, N)).T  # converts the t data from shape 1 x 1 to shape N x 1
             r_star = np.tile(data['r'], (1, N)).T  # converts the r data from shape 1 x 1 to shape N x 1
 
             boundary_condition_codes = data['bc_codes']
 
-            navier_stokes_loss, boundary_condition_loss = model.get_loss(x_star,
-                                                                         y_star,
-                                                                         t_star,
-                                                                         r_star,
-                                                                         boundary_condition_codes)
+            navier_stokes_loss, boundary_condition_loss, total_loss = model.get_loss(x_star,
+                                                                                     y_star,
+                                                                                     t_star,
+                                                                                     r_star,
+                                                                                     u_star,
+                                                                                     v_star,
+                                                                                     boundary_condition_codes)
 
             gathered_losses[parameter_point_container] = navier_stokes_loss
             gathered_boundary_losses[parameter_point_container] = boundary_condition_loss
+            gathered_total_losses[parameter_point_container] = total_loss
 
             if plot_figures:
                 plot_on_regular_grid(data_file, data_directory, parameter_point_container, model, figure_path)
                 # TODO could call my non-regular grid plotting tool here to do it on the unstructured grid
 
-    return gathered_losses, gathered_boundary_losses
+    return gathered_losses, gathered_boundary_losses, gathered_total_losses
 
 
-def plot_losses(gathered_losses, gathered_boundary_losses,
+def plot_losses(gathered_losses, gathered_boundary_losses, gathered_total_losses,
                 additional_fig_filename_tag, additional_real_simulation_data_parameters=[],
                 figure_path='./figures_output/'):
     # # this needs to actually be a stored variable not an in-scope variable in the restored class
@@ -263,8 +273,8 @@ def plot_losses(gathered_losses, gathered_boundary_losses,
 
     print("Blue indicates that simulation data was used at this point. Yellow indicates interpolation.")
     accuracy_threshold = 0.002
-    sorted_keys_for_gathered_losses = sorted(gathered_losses)
-    for key in sorted_keys_for_gathered_losses:
+    sorted_keys_for_gathered_total_losses = sorted(gathered_losses)
+    for key in sorted_keys_for_gathered_total_losses:
         value = gathered_losses[key]
         if value > accuracy_threshold:
             value = style.RED(value)
@@ -277,19 +287,21 @@ def plot_losses(gathered_losses, gathered_boundary_losses,
 
     print(style.RESET("Resetting terminal colours..."))
 
-    x_data = range(len(gathered_losses))  # sorted_keys_for_gathered_losses
-    y_data = [gathered_losses[x] for x in sorted_keys_for_gathered_losses]
-    second_panel_y_data = list(gathered_boundary_losses.values())
+    x_data = range(len(gathered_losses))  # sorted_keys_for_gathered_total_losses
+    y_data = [gathered_losses[x] for x in sorted_keys_for_gathered_total_losses]
+    second_panel_y_data = [gathered_boundary_losses[x] for x in sorted_keys_for_gathered_total_losses]
+    second_panel_y_data = None
+
     scatter_x = []
     scatter_y = []
-    for index, key in enumerate(sorted_keys_for_gathered_losses):
+    for index, key in enumerate(sorted_keys_for_gathered_total_losses):
         if key in parameters_with_real_simulation_data:
             scatter_x.append(index)
-            scatter_y.append(gathered_losses[sorted_keys_for_gathered_losses[index]])
+            scatter_y.append(gathered_losses[sorted_keys_for_gathered_total_losses[index]])
 
-    y_axis_range = (1e-6, 1e8)
-    NavierStokes.plot_graph(x_data, y_data, 'Loss over Parameters', scatter_x, scatter_y,
-                            additional_fig_filename_tag, second_panel_y_data, y_range_1=y_axis_range,
+    y_axis_range = (1e0, 1e8)
+    NavierStokes.plot_graph(x_data, y_data, 'Loss over Parameter Space at ALA Iteration {}'.format(additional_fig_filename_tag), scatter_x=scatter_x, scatter_y=scatter_y,
+                            savefile_nametag=additional_fig_filename_tag, second_y_data=second_panel_y_data, y_range_1=y_axis_range,
                             y_range_2=y_axis_range, y_range_3=y_axis_range,
                             relative_or_absolute_output_folder=figure_path)
     return
@@ -299,24 +311,27 @@ def compute_and_plot_losses(plot_all_figures, pickled_model_filename, saved_tf_m
                             data_dir_in, vtu_file_name_template,
                             additional_real_simulation_data_parameters=(), plot_filename_tag='1'):
 
-    gathered_losses, gathered_boundary_losses = get_losses(pickled_model_filename, saved_tf_model_filename,
-                                                                    parameter_manager,
-                                                                    data_dir_in, vtu_file_name_template,
-                                                                    plot_figures=plot_all_figures,
-                                                                    figure_path='{}/figures_output/'.format(data_dir_in))
+    gathered_losses, gathered_boundary_losses, gathered_total_losses = get_losses(pickled_model_filename,
+                                                                                  saved_tf_model_filename,
+                                                                                  parameter_manager,
+                                                                                  data_dir_in, vtu_file_name_template,
+                                                                                  plot_figures=plot_all_figures,
+                                                                                  figure_path='{}/figures_output/'.format(
+                                                                                      data_dir_in))
 
     plot_losses(gathered_losses,
-                  gathered_boundary_losses,
-                  plot_filename_tag,
-                  additional_real_simulation_data_parameters,
-                  figure_path='{}/figures_output/'.format(data_dir_in))
+                gathered_boundary_losses,
+                gathered_total_losses,
+                plot_filename_tag,
+                additional_real_simulation_data_parameters,
+                figure_path='{}/figures_output/'.format(data_dir_in))
 
     return
 
 
 def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fieldname, output_filename_tag='',
                                         xrange=None, yrange=None, sim_dir_and_parameter_tuples_picklefile=None,
-                                        colourscale_range=None, subfolder_name=pathlib.Path('')):
+                                        colourscale_range=None, subfolder_name=pathlib.Path('.')):
     scatter_x = []
     scatter_y = []
     scatter_colour = []
@@ -344,7 +359,7 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
         title_tag = fieldname.replace('_', ' ')
 
 
-    plot_title = 'L2 Errors in {}, Iteration {}'.format(title_tag, output_filename_tag)
+    plot_title = 'L2 Errors in {}, ALA Iteration {}'.format(title_tag, output_filename_tag)
     plot_title.replace('_', ' ')
     plt.title(plot_title)
 
@@ -362,8 +377,10 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
         params_with_data_scatter_y = parameters['r']
         plt.scatter(params_with_data_scatter_x, params_with_data_scatter_y, c='red', s=20)
 
-    figure_savefile = subfolder_name / r'plotted_integrated_errors_{}_{}.png'.format(fieldname, output_filename_tag)
-    plt.savefig(str(figure_savefile))
+    figure_savefile = str(subfolder_name /
+                          r'plotted_integrated_errors_{}_{}.png'.format(fieldname, output_filename_tag))
+
+    plt.savefig(figure_savefile)
     plt.close()
 
 
@@ -379,7 +396,7 @@ def get_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklef
 
 
 def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile, output_filename_tag='',
-                                                    xrange=None, yrange=None):
+                                                    xrange=None, yrange=None, output_folder=pathlib.Path('.')):
     parameters = get_parameters_which_have_training_data(sim_dir_and_parameter_tuples_picklefile)
     scatter_x = parameters['t']
     scatter_y = parameters['r']
@@ -395,8 +412,8 @@ def scatterplot_parameters_which_have_training_data(sim_dir_and_parameter_tuples
     if yrange is not None:
         plt.ylim(yrange[0], yrange[1])
 
-    figure_savefile = r'plotted_parameters{}.png'.format(output_filename_tag)
-    plt.savefig(figure_savefile)
+    figure_savefile = output_folder / r'plotted_parameters{}.png'.format(output_filename_tag)
+    plt.savefig(str(figure_savefile))
     plt.close()
 
 
@@ -426,7 +443,7 @@ class GradientData(object):
     def get_pressure_drop(self):
         drop = self.p_start - self.p_end
         print('Pressure Drop = {}, (t={}, r={})'.format(drop, self.t, self.r))
-        return drop
+        return self.t, self.r, drop
 
     def grab_data_from_prediction_array(self, prediction_array):
         p = np.squeeze(prediction_array['p_pred'])
@@ -442,8 +459,8 @@ if __name__ == '__main__':
     plot_all_figures = True
     # saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
     # pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
-    model_index_to_load = 31
-    data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data/'
+    model_index_to_load = 36
+    data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data_main_paper_data/'
     saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
     pickled_model_filename = os.path.join(data_root, 'saved_model_{}.pickle'.format(model_index_to_load))
 
@@ -516,8 +533,14 @@ if __name__ == '__main__':
     prediction = NavierStokes.load_and_evaluate_model_at_point(point, pickled_model_filename, saved_tf_model_filename,
                                                                max_optimizer_iterations)
     # print('prediction2', prediction['p_pred'])
+    plotting_array_r = []
+    plotting_array_pressure_drop = []
     for gradient_data in all_gradient_data:
         gradient_data.grab_data_from_prediction_array(prediction)
-        gradient_data.get_pressure_drop()
+        t, r, drop = gradient_data.get_pressure_drop()
+        plotting_array_r.append(r)
+        plotting_array_pressure_drop.append(drop)
+
+    NavierStokes.plot_graph(plotting_array_r, plotting_array_pressure_drop, 'beans_2pt0_56ALA')
 
     timer.toc()

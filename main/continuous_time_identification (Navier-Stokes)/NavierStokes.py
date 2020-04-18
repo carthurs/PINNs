@@ -442,15 +442,17 @@ class PhysicsInformedNN:
     def getLossHistory(self):
         return self.loss_history
 
-    def get_loss(self, x_star, y_star, t_star, r_star, boundary_condition_codes):
+    def get_loss(self, x_star, y_star, t_star, r_star, u_star, v_star, boundary_condition_codes):
         tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.r_tf: r_star,
+                   self.u_tf: u_star, self.v_tf: v_star,
                    self.bc_codes_tf: boundary_condition_codes}
 
         navier_stokes_loss = self.sess.run(self.loss_navier_stokes, tf_dict)
         boundary_condition_loss = self.sess.run(self.loss_boundary_conditions, tf_dict)
+        total_loss = self.sess.run(self.loss, tf_dict)
         print('boundary_condition_loss', boundary_condition_loss)
 
-        return navier_stokes_loss, boundary_condition_loss
+        return navier_stokes_loss, boundary_condition_loss, total_loss
 
     def get_solution(self, x_star, y_star, t_star, r_star):
         tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.r_tf: r_star}
@@ -1344,6 +1346,6 @@ if __name__ == "__main__":
     # evaluate_all_boundary_errors()
 
 
-    param_container = SPM.SimulationParameterContainer(2.1, 2.1)
+    param_container = SPM.SimulationParameterContainer(-2.0, 2.0)
     step_index = 31
     predict_and_save_to_vtu_file(param_container, step_index)

@@ -62,13 +62,15 @@ if __name__ == '__main__':
     use_pressure_reference_in_training = True
     number_of_hidden_layers = 4
 
-    starting_index = 63
+    starting_index = 0
     ending_index = 200
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
     training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.99)
     test_mode = False
+    minimal_plotting_and_evalution = True
+    plot_all_figures = not minimal_plotting_and_evalution
     if not test_mode:
         num_training_iterations = 20000
         max_optimizer_iterations = 50000
@@ -173,7 +175,6 @@ if __name__ == '__main__':
 
         additional_t_parameters_NS_simulations_run_at = [pair[1] for pair in sim_dir_and_parameter_tuples]
 
-        plot_all_figures = True
         saved_tf_model_filename_post = saved_tf_model_filename.format(simulation_parameters_index + 1)
         pickled_model_filename_post = pickled_model_filename.format(simulation_parameters_index + 1)
 
@@ -188,13 +189,15 @@ if __name__ == '__main__':
                                                         vtu_and_xml_file_basename + r'_using_points_from_xml')
 
         scatterplot_tag = simulation_parameters_index + 1
-        LebesgueErrorPlotter.scatterplot_used_datapoints_and_errors(parameter_manager,
-                                                                    test_vtu_filename_template_without_extension,
-                                                                    pickled_model_filename_post,
-                                                                    saved_tf_model_filename_post,
-                                                                    true_density, true_viscosity,
-                                                                    config_manager, picklefile_name, logger,
-                                                                    nektar_driver,
-                                                                    parameters_scatter_plot_filename_tag=scatterplot_tag,
-                                                                    xrange=(parameter_range_start, parameter_range_end),
-                                                                    yrange=(parameter_range_start, parameter_range_end))
+
+        if not minimal_plotting_and_evalution:
+            LebesgueErrorPlotter.scatterplot_used_datapoints_and_errors(parameter_manager,
+                                                                        test_vtu_filename_template_without_extension,
+                                                                        pickled_model_filename_post,
+                                                                        saved_tf_model_filename_post,
+                                                                        true_density, true_viscosity,
+                                                                        config_manager, picklefile_name, logger,
+                                                                        nektar_driver,
+                                                                        parameters_scatter_plot_filename_tag=str(scatterplot_tag),
+                                                                        xrange=(parameter_range_start, parameter_range_end),
+                                                                        yrange=(parameter_range_start, parameter_range_end))
