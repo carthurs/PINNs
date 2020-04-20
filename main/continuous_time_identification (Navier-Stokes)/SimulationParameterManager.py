@@ -69,14 +69,21 @@ class SimulationParameterManager(object):
         for r in self.__parameter_space:
             yield r
 
-    def get_initial_parameters(self):
-        # t_mid = self.flat_t_space[int(len(self.flat_t_space) / 2)]
-        # r_mid = self.flat_r_space[int(len(self.flat_r_space) / 2)]
+    def get_initial_parameters(self, strategy):
+        if strategy == 'end_value':
+            t_end = self.flat_t_space[-1]
+            r_end = self.flat_r_space[-1]
+            all_initial_parameters = [SimulationParameterContainer(t_end, r_end)]  # return value will be iterated over, so place in a list. Enables multiple values to be returned.
+        elif strategy == 'corners':  #need to custom-define these here
+            all_initial_parameters = list()
+            all_initial_parameters.append(SimulationParameterContainer(2.0, 2.0))
+            all_initial_parameters.append(SimulationParameterContainer(-2.0, 2.0))
+            all_initial_parameters.append(SimulationParameterContainer(2.0, -2.0))
+            all_initial_parameters.append(SimulationParameterContainer(-2.0, -2.0))
+        else:
+            raise RuntimeError('Unknown strategy provided.')
 
-        t_mid = self.flat_t_space[-1]
-        r_mid = self.flat_r_space[-1]
-
-        return SimulationParameterContainer(t_mid, r_mid)
+        return all_initial_parameters
 
     def get_parameter_space(self):
         return self.__parameter_space

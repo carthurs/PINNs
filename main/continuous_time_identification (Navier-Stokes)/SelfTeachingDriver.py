@@ -121,7 +121,7 @@ if __name__ == '__main__':
         if simulation_parameters_index == 0:
             # If this is the first iteration, no data is available yet, so we just work with the parameter at the
             # midpoint of the parameter range of interest.
-            parameters_container = parameter_manager.get_initial_parameters()
+            parameters_containers_to_add_to_training_set = parameter_manager.get_initial_parameters('end_value')
             start_from_existing_model = False
         else:
             logger.info('Will load tensorflow file {}'.format(saved_tf_model_filename.format(simulation_parameters_index)))
@@ -137,8 +137,9 @@ if __name__ == '__main__':
             # parameter space around the suggested t_parameter, if we already have training data for that parameter.
             exclusion_radius = np.pi / 30  # just something irrational so we don't bump into other values
             try:
-                parameters_container = loss_landscape.get_parameters_of_worst_loss_excluding_those_near_existing_simulations(additional_t_parameters_NS_simulations_run_at,
+                parameters_containers_to_add_to_training_set_out = loss_landscape.get_parameters_of_worst_loss_excluding_those_near_existing_simulations(additional_t_parameters_NS_simulations_run_at,
                                                                                                                     exclusion_radius)
+                parameters_containers_to_add_to_training_set = [parameters_containers_to_add_to_training_set_out]  # Convert to list here, as it will be iterated over. You can add more parameters_containers here if you want, too, for simultaneous adding.
                 # additional_t_parameters_NS_simulations_run_at.append(t_parameter)
             except SolutionQualityChecker.LossLandscape.NoAvailableParameters:
                 logger.info("Could not find another parameter value to simulate at. Parameter space is saturated;\
@@ -149,15 +150,17 @@ if __name__ == '__main__':
 
             start_from_existing_model = True
 
-        parameters_container.log()
-
         nektar_driver = NektarDriver.NektarDriver(nektar_data_root_path, reference_data_subfolder,
                                                   simulation_subfolder_template,
                                                   vtu_and_xml_file_basename,
                                                   logger)
-        nektar_driver.run_simulation(parameters_container)
 
-        sim_dir_and_parameter_tuples.append((nektar_driver.get_vtu_file_without_extension(parameters_container), parameters_container))
+        for parameters_container in parameters_containers_to_add_to_training_set:
+            parameters_container.log()
+            nektar_driver.run_simulation(parameters_container)
+            sim_dir_and_parameter_tuples.append(
+                (nektar_driver.get_vtu_file_without_extension(parameters_container), parameters_container)
+            )
 
         picklefile_name = sim_dir_and_parameter_tuples_picklefile_basename.format(simulation_parameters_index + 1)
         with open(picklefile_name, 'wb') as outfile:
