@@ -233,8 +233,13 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, parameter_manage
             x_star = X_star[:, 0:1]
             y_star = X_star[:, 1:2]
 
-            u_star = data['U_star'][:, 0]
-            v_star = data['U_star'][:, 1]
+            velocity_fem_data_available = data['U_star'] is not None
+            if velocity_fem_data_available:
+                u_star = data['U_star'][:, 0]
+                v_star = data['U_star'][:, 1]
+            else:
+                u_star = None
+                v_star = None
 
             N = X_star.shape[0]
             t_star = np.tile(data['t'], (1, N)).T  # converts the t data from shape 1 x 1 to shape N x 1

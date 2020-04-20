@@ -449,10 +449,18 @@ class PhysicsInformedNN:
 
         navier_stokes_loss = self.sess.run(self.loss_navier_stokes, tf_dict)
         boundary_condition_loss = self.sess.run(self.loss_boundary_conditions, tf_dict)
-        total_loss = self.sess.run(self.loss, tf_dict)
+
         print('boundary_condition_loss', boundary_condition_loss)
 
-        return navier_stokes_loss, boundary_condition_loss, total_loss
+        loss_dict = {'navier_stokes_loss': navier_stokes_loss,
+                     'boundary_condition_loss': boundary_condition_loss}
+
+        velocity_training_data_available = u_star is not None
+        if velocity_training_data_available:
+            total_loss = self.sess.run(self.loss, tf_dict)
+            loss_dict['total_loss'] = total_loss
+
+        return loss_dict
 
     def get_solution(self, x_star, y_star, t_star, r_star):
         tf_dict = {self.x_tf: x_star, self.y_tf: y_star, self.t_tf: t_star, self.r_tf: r_star}
