@@ -247,17 +247,18 @@ def get_losses(pickled_model_filename, saved_tf_model_filename, parameter_manage
 
             boundary_condition_codes = data['bc_codes']
 
-            navier_stokes_loss, boundary_condition_loss, total_loss = model.get_loss(x_star,
-                                                                                     y_star,
-                                                                                     t_star,
-                                                                                     r_star,
-                                                                                     u_star,
-                                                                                     v_star,
-                                                                                     boundary_condition_codes)
+            computed_loss_dict = model.get_loss(x_star,
+                                                y_star,
+                                                t_star,
+                                                r_star,
+                                                u_star,
+                                                v_star,
+                                                boundary_condition_codes)
 
-            gathered_losses[parameter_point_container] = navier_stokes_loss
-            gathered_boundary_losses[parameter_point_container] = boundary_condition_loss
-            gathered_total_losses[parameter_point_container] = total_loss
+            gathered_losses[parameter_point_container] = computed_loss_dict['navier_stokes_loss']
+            gathered_boundary_losses[parameter_point_container] = computed_loss_dict['boundary_condition_loss']
+            if velocity_fem_data_available:
+                gathered_total_losses[parameter_point_container] = computed_loss_dict['total_loss']
 
             if plot_figures:
                 plot_on_regular_grid(data_file, data_directory, parameter_point_container, model, figure_path)
