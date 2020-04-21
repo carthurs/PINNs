@@ -30,8 +30,16 @@ class ConfigManager(object):
     MACHINE_ID = 'machine_id'
 
     def __init__(self, config_root=os.getcwd()):
-        with open(config_root + '/config.json', 'r') as infile:
+        # Load default settings first
+        with open(config_root + '/config.json.default', 'r') as infile:
             self.config_data = json.loads(infile.read())
+
+        # Override defaults with the user's machine-specific settings from config.json
+        with open(config_root + '/config.json', 'r') as infile:
+            custom_config_data = json.loads(infile.read())
+
+        self.config_data.update(custom_config_data)
+
 
     def get_field_convert_exe(self):
         return self.config_data[ConfigManager.FIELD_CONVERT_PATH]
@@ -105,7 +113,7 @@ class ConfigManager(object):
         return self._true_or_false_string_to_bool(use_slack_string)
 
     def paraview_available(self):
-        paraview_available = self.config_data[ConfigManager.PARAVIEW_AVAIALBLE].lower()
+        paraview_available = self.config_data[ConfigManager.PARAVIEW_AVAILABLE].lower()
         return self._true_or_false_string_to_bool(paraview_available)
 
     def get_training_strategy(self):
