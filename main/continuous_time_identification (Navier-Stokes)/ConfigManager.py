@@ -26,6 +26,7 @@ class ConfigManager(object):
     SLACK_PUSH_URL = 'slack_push_url'
     USE_SLACK_NOTIFICATIONS = 'use_slack_notifications'
     TRAINING_STRATEGY = 'training_strategy'
+    PARAVIEW_AVAILABLE = 'paraview_available'
 
     def __init__(self, config_root=os.getcwd()):
         with open(config_root + '/config.json', 'r') as infile:
@@ -90,14 +91,21 @@ class ConfigManager(object):
     def get_slack_push_url(self):
         return self.config_data[ConfigManager.SLACK_PUSH_URL]
 
-    def slack_integration_enabled(self):
-        use_slack_string = self.config_data[ConfigManager.USE_SLACK_NOTIFICATIONS].lower()
-        if use_slack_string == 'true':
+    def _true_or_false_string_to_bool(self, lowercase_string):
+        if lowercase_string == 'true':
             return True
-        elif use_slack_string == 'false':
+        elif lowercase_string == 'false':
             return False
         else:
             raise UnknownConfigurationInput
+
+    def slack_integration_enabled(self):
+        use_slack_string = self.config_data[ConfigManager.USE_SLACK_NOTIFICATIONS].lower()
+        return self._true_or_false_string_to_bool(use_slack_string)
+
+    def paraview_available(self):
+        paraview_available = self.config_data[ConfigManager.PARAVIEW_AVAIALBLE].lower()
+        return self._true_or_false_string_to_bool(paraview_available)
 
     def get_training_strategy(self):
         strategy = self.config_data[ConfigManager.TRAINING_STRATEGY]

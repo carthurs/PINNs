@@ -51,7 +51,8 @@ def notify_slack(message):
         content = '{{"text":"{}"}}'.format(message)
 
         # Requires 1) running on Linux, and 2) package curl is installed
-        subprocess.run(['curl', '-X', 'POST', '-H', '\'Content-type: application/json\'', '--data', content, slack_push_url])
+        subprocess.run(['curl', '-X', 'POST', '-H', '\'Content-type: application/json\'',
+                        '--data', content, slack_push_url])
 
 
 if __name__ == '__main__':
@@ -226,7 +227,7 @@ if __name__ == '__main__':
                                                                         xrange=(parameter_range_start, parameter_range_end),
                                                                         yrange=(parameter_range_start, parameter_range_end))
 
-        if (simulation_parameters_index - 1) % 5 == 0:
+        if config_manager.paraview_available() and (simulation_parameters_index - 1) % 5 == 0:
             error_integral_range = LebesgueErrorPlotter.run_plotting(simulation_parameters_index,
                                                                      colourscale_range=[0.0, 2.0],
                                                 output_subfolder=pathlib.Path(config_manager.get_l2_grid_plot_output_subfolder()))
