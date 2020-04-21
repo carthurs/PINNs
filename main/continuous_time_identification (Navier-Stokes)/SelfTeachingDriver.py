@@ -12,6 +12,7 @@ import pickle
 import sys
 import os.path
 import ActiveLearningUtilities
+import ActiveLearningConstants
 import pathlib
 import subprocess
 
@@ -139,26 +140,34 @@ if __name__ == '__main__':
             logger.info('Will load tensorflow file {}'.format(saved_tf_model_filename.format(simulation_parameters_index)))
             logger.info('Will load pickle file {}'.format(pickled_model_filename.format(simulation_parameters_index)))
 
-            loss_landscape = SolutionQualityChecker.LossLandscape(
-                pickled_model_filename.format(simulation_parameters_index),
-                saved_tf_model_filename.format(simulation_parameters_index),
-                parameter_manager, master_model_data_root_path,
-                reference_vtu_filename_template)
+            training_strategy = config_manager.get_training_strategy()
+            if training_strategy == ActiveLearningConstants.TrainingStrategies.ACTIVE:
+                loss_landscape = SolutionQualityChecker.LossLandscape(
+                    pickled_model_filename.format(simulation_parameters_index),
+                    saved_tf_model_filename.format(simulation_parameters_index),
+                    parameter_manager, master_model_data_root_path,
+                    reference_vtu_filename_template)
 
-            # Ensure that we're not repeating a previously-done simulation, by cutting a hole in the permitted
-            # parameter space around the suggested t_parameter, if we already have training data for that parameter.
-            exclusion_radius = np.pi / 30  # just something irrational so we don't bump into other values
-            try:
-                parameters_containers_to_add_to_training_set_out = loss_landscape.get_parameters_of_worst_loss_excluding_those_near_existing_simulations(additional_t_parameters_NS_simulations_run_at,
-                                                                                                                    exclusion_radius)
+                # Ensure that we're not repeating a previously-done simulation, by cutting a hole in the permitted
+                # parameter space around the suggested t_parameter, if we already have training data for that parameter.
+                exclusion_radius = np.pi / 30  # just something irrational so we don't bump into other values
+                try:
+                    parameters_containers_to_add_to_training_set_out = loss_landscape.get_parameters_of_worst_loss_excluding_those_near_existing_simulations(additional_t_parameters_NS_simulations_run_at,
+                                                                                                                        exclusion_radius)
+                    parameter_manager.annotate_parameter_set_as_used(parameters_containers_to_add_to_training_set_out)
+                    parameters_containers_to_add_to_training_set = [parameters_containers_to_add_to_training_set_out]  # Convert to list here, as it will be iterated over. You can add more parameters_containers here if you want, too, for simultaneous adding.
+                    # additional_t_parameters_NS_simulations_run_at.append(t_parameter)
+                except ActiveLearningUtilities.NoAvailableParameters:
+                    logger.info("Could not find another parameter value to simulate at. Parameter space is saturated;\
+                                                     no further simulations possible with an exclusion_neighbourhood \
+                                                     of size {}."
+                                .format(exclusion_radius))
+                    raise
+            elif training_strategy == ActiveLearningConstants.TrainingStrategies.RANDOM:
+                parameters_containers_to_add_to_training_set_out = parameter_manager.get_random_unused_parameter_set()
                 parameters_containers_to_add_to_training_set = [parameters_containers_to_add_to_training_set_out]  # Convert to list here, as it will be iterated over. You can add more parameters_containers here if you want, too, for simultaneous adding.
-                # additional_t_parameters_NS_simulations_run_at.append(t_parameter)
-            except SolutionQualityChecker.LossLandscape.NoAvailableParameters:
-                logger.info("Could not find another parameter value to simulate at. Parameter space is saturated;\
-                                                 no further simulations possible with an exclusion_neighbourhood \
-                                                 of size {}."
-                            .format(exclusion_radius))
-                sys.exit(0)
+            else:
+                raise RuntimeError('Unknown training strategy provided.')
 
             start_from_existing_model = True
 

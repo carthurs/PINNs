@@ -14,6 +14,7 @@ import ConfigManager
 import matplotlib.pyplot as plt
 import pathlib
 from pytictoc import TicToc
+import ActiveLearningUtilities
 
 if sys.platform.lower() == "win32":
     os.system('color')
@@ -56,9 +57,6 @@ class LossLandscape(object):
         self.data = np.zeros(shape=(self.num_parameter_points, num_parameters + 1))
         self.next_empty_row_index = 0
         self.landscape_needs_recomputing = True
-
-    class NoAvailableParameters(Exception):
-        pass
 
     def _insert_loss_point(self, parameters_tuple, loss):
 
@@ -107,7 +105,7 @@ class LossLandscape(object):
 
         no_parameters_available = (max(row_exclusion_mask) == False)
         if no_parameters_available:
-            raise LossLandscape.NoAvailableParameters
+            raise ActiveLearningUtilities.NoAvailableParameters
 
         excluded_data = self.data[row_exclusion_mask, :]
 

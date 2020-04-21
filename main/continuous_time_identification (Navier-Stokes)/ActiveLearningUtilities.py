@@ -4,6 +4,11 @@ import subprocess
 import ConfigManager
 import os
 
+
+class NoAvailableParameters(Exception):
+    pass
+
+
 # Checks if nektar mesh xml file is compressed
 def is_compressed(filename):
     with open(filename, 'r') as infile:

@@ -1,7 +1,8 @@
 import numpy as np
 import logging
 import hashlib
-
+import random
+import ActiveLearningUtilities
 
 class SimulationParameterContainer(object):
     # Careful with this class. It should not contain any lists, dicts or other mutable types, or else
@@ -65,9 +66,35 @@ class SimulationParameterManager(object):
         self.flat_t_space = self.__parameter_space[0].flatten()
         self.flat_r_space = self.__parameter_space[1].flatten()
 
-    def mesh_parameters_iterator(self):
-        for r in self.__parameter_space:
-            yield r
+        self.number_of_unused_parameter_points = len(self.flat_r_space)
+        self.used_parameter_indices = list()
+
+    def annotate_parameter_set_as_used(self, parameter_container):
+        for index, params in enumerate(self.all_parameter_points()):
+            if parameter_container == params:
+                if index in self.used_parameter_indices:
+                    raise RuntimeError('Attempted to mark parameter index {} as used, but it was already marked as such.')
+                self.used_parameter_indices.append(index)
+                self.number_of_unused_parameter_points -= 1
+                if self.number_of_unused_parameter_points < 0:
+                    raise RuntimeError('Number of unused parameter points became negative.')
+                break
+
+    def get_random_unused_parameter_set(self):
+        if self.number_of_unused_parameter_points == 0:
+            raise ActiveLearningUtilities.NoAvailableParameters
+
+        random_unused_parameter_index = random.randint(0, self.number_of_unused_parameter_points - 1)  # randint(a, b) generates in the range [a, b] inclusive, hence the -1
+        unused_parameter_counter = 0
+        for index, param in enumerate(self.all_parameter_points()):
+            if index not in self.used_parameter_indices:  # only interested in indexing over the unused parameters
+                if unused_parameter_counter == random_unused_parameter_index:
+                    self.annotate_parameter_set_as_used(param)
+                    return param
+                else:
+                    unused_parameter_counter += 1
+
+        raise RuntimeError('Failed to find unused parameter set, but some should have been available.')
 
     def get_initial_parameters(self, strategy):
         all_initial_parameters = list()
@@ -89,6 +116,9 @@ class SimulationParameterManager(object):
             all_initial_parameters.append(SimulationParameterContainer(0.0, 0.0))
         else:
             raise RuntimeError('Unknown strategy provided.')
+
+        for params in all_initial_parameters:
+            self.annotate_parameter_set_as_used(params)
 
         return all_initial_parameters
 

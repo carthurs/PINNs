@@ -17,5 +17,6 @@
   "proportion_of_training_data_to_use": "0.99",
   "l2_grid_plot_output_subfolder": "L2_plots",
   "use_slack_notifications": "false",
-  "slack_push_url": "set this up by following the instructions here: https://api.slack.com/start/overview"
+  "slack_push_url": "set this up by following the instructions here: https://api.slack.com/start/overview",
+  "training_strategy": "active"
 }

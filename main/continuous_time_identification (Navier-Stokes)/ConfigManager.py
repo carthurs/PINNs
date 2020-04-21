@@ -1,6 +1,9 @@
 import json
 import os
+import ActiveLearningConstants
 
+class UnknownConfigurationInput(Exception):
+    pass
 
 class ConfigManager(object):
     NUM_CPU_CORES = 'num_cpu_cores'
@@ -22,6 +25,7 @@ class ConfigManager(object):
     L2_GRID_PLOT_OUTPUT_SUBFOLDER = 'l2_grid_plot_output_subfolder'
     SLACK_PUSH_URL = 'slack_push_url'
     USE_SLACK_NOTIFICATIONS = 'use_slack_notifications'
+    TRAINING_STRATEGY = 'training_strategy'
 
     def __init__(self, config_root=os.getcwd()):
         with open(config_root + '/config.json', 'r') as infile:
@@ -87,9 +91,23 @@ class ConfigManager(object):
         return self.config_data[ConfigManager.SLACK_PUSH_URL]
 
     def slack_integration_enabled(self):
-        use_slack_string = self.config_data[ConfigManager.USE_SLACK_NOTIFICATIONS]
-        if use_slack_string.lower() == 'true':
+        use_slack_string = self.config_data[ConfigManager.USE_SLACK_NOTIFICATIONS].lower()
+        if use_slack_string == 'true':
             return True
-        else:
+        elif use_slack_string == 'false':
             return False
+        else:
+            raise UnknownConfigurationInput
+
+    def get_training_strategy(self):
+        strategy = self.config_data[ConfigManager.TRAINING_STRATEGY]
+        if strategy == 'active':
+            return ActiveLearningConstants.TrainingStrategies.ACTIVE
+        elif strategy == 'random':
+            return ActiveLearningConstants.TrainingStrategies.RANDOM
+        else:
+            raise UnknownConfigurationInput
+
+
+
 
