@@ -17,6 +17,11 @@ class ConfigManager(object):
     BOUNDARY_ERRORS_FILENAME_TEMPLATE = 'boundary_errors_filename_template'
     MESH_DATA_FOLDER_TEMPLATE = 'mesh_data_folder_template'
     VTU_AND_XML_FILE_BASENAME = 'vtu_and_xml_file_basename'
+    ALA_STARTING_INDEX = 'ala_starting_index'
+    PROPORTION_OF_TRAINING_DATA_TO_USE = 'proportion_of_training_data_to_use'
+    L2_GRID_PLOT_OUTPUT_SUBFOLDER = 'l2_grid_plot_output_subfolder'
+    SLACK_PUSH_URL = 'slack_push_url'
+    USE_SLACK_NOTIFICATIONS = 'use_slack_notifications'
 
     def __init__(self, config_root=os.getcwd()):
         with open(config_root + '/config.json', 'r') as infile:
@@ -68,3 +73,23 @@ class ConfigManager(object):
 
     def get_vtu_and_xml_file_basename(self):
         return self.config_data[ConfigManager.VTU_AND_XML_FILE_BASENAME]
+
+    def get_ala_starting_index(self):
+        return int(self.config_data[ConfigManager.ALA_STARTING_INDEX])
+
+    def get_proportion_of_training_data_to_use(self):
+        return float(self.config_data[ConfigManager.PROPORTION_OF_TRAINING_DATA_TO_USE])
+
+    def get_l2_grid_plot_output_subfolder(self):
+        return self.config_data[ConfigManager.L2_GRID_PLOT_OUTPUT_SUBFOLDER]
+
+    def get_slack_push_url(self):
+        return self.config_data[ConfigManager.SLACK_PUSH_URL]
+
+    def slack_integration_enabled(self):
+        use_slack_string = self.config_data[ConfigManager.USE_SLACK_NOTIFICATIONS]
+        if use_slack_string.lower() == 'true':
+            return True
+        else:
+            return False
+

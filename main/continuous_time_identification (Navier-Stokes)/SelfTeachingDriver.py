@@ -12,7 +12,8 @@ import pickle
 import sys
 import os.path
 import ActiveLearningUtilities
-
+import pathlib
+import subprocess
 
 
 class TrainingDataCountSpecifier(object):
@@ -42,8 +43,17 @@ class TrainingDataCountSpecifier(object):
         return total_training_points
 
 
-if __name__ == '__main__':
+def notify_slack(message):
+    configuration_manager = ConfigManager.ConfigManager()
+    if configuration_manager.slack_integration_enabled():
+        slack_push_url = configuration_manager.get_slack_push_url()
+        content = '{{"text":"{}"}}'.format(message)
 
+        # Requires 1) running on Linux, and 2) package curl is installed
+        subprocess.run(['curl', '-X', 'POST', '-H', '\'Content-type: application/json\'', '--data', content, slack_push_url])
+
+
+if __name__ == '__main__':
     logger = ActiveLearningUtilities.create_logger('SelfTeachingDriver')
     logger.info("=============== Starting SelfTeachingDriver.py ===============")
     config_manager = ConfigManager.ConfigManager()
@@ -62,12 +72,13 @@ if __name__ == '__main__':
     use_pressure_reference_in_training = True
     number_of_hidden_layers = 4
 
-    starting_index = 0
+    starting_index = config_manager.get_ala_starting_index()
     ending_index = 200
     sim_dir_and_parameter_tuples_picklefile_basename = os.path.join(master_model_data_root_path,
                                                                     'sim_dir_and_parameter_tuples_{}start.pickle')
 
-    training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION, 0.99)
+    training_count_specifier = TrainingDataCountSpecifier(TrainingDataCountSpecifier.PROPORTION,
+                                                          config_manager.get_proportion_of_training_data_to_use())
     test_mode = False
     minimal_plotting_and_evalution = True
     plot_all_figures = not minimal_plotting_and_evalution
@@ -113,6 +124,7 @@ if __name__ == '__main__':
 
     for simulation_parameters_index in range(starting_index, ending_index):
         logger.info('Starting iteration {}'.format(simulation_parameters_index))
+        notify_slack('ALA SelfTeachingDriver.py starting iteration {}'.format(simulation_parameters_index))
         logger.info('Nametag is {}'.format(simulation_parameters_index))
 
         saved_tf_model_filename = os.path.join(master_model_data_root_path, 'saved_model_{}.tf')
@@ -121,7 +133,7 @@ if __name__ == '__main__':
         if simulation_parameters_index == 0:
             # If this is the first iteration, no data is available yet, so we just work with the parameter at the
             # midpoint of the parameter range of interest.
-            parameters_containers_to_add_to_training_set = parameter_manager.get_initial_parameters('end_value')
+            parameters_containers_to_add_to_training_set = parameter_manager.get_initial_parameters('corners_and_centre')
             start_from_existing_model = False
         else:
             logger.info('Will load tensorflow file {}'.format(saved_tf_model_filename.format(simulation_parameters_index)))
@@ -204,3 +216,8 @@ if __name__ == '__main__':
                                                                         parameters_scatter_plot_filename_tag=str(scatterplot_tag),
                                                                         xrange=(parameter_range_start, parameter_range_end),
                                                                         yrange=(parameter_range_start, parameter_range_end))
+
+        if (simulation_parameters_index - 1) % 5 == 0:
+            error_integral_range = LebesgueErrorPlotter.run_plotting(simulation_parameters_index,
+                                                                     colourscale_range=[0.0, 2.0],
+                                                output_subfolder=pathlib.Path(config_manager.get_l2_grid_plot_output_subfolder()))

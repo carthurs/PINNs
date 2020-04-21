@@ -243,7 +243,7 @@ def run_plotting(simulation_parameters_index, colourscale_range=None, output_sub
 
 
 if __name__ == '__main__':
-    output_subfolder = pathlib.Path('L2_plots_5pct_training_data')
+    config_manager = ConfigManager.ConfigManager()
 
     # for step in range(0, 13):
     #     simulation_parameters_index = step * 5 + 1
@@ -253,7 +253,7 @@ if __name__ == '__main__':
     for step in range(0, 13):
         simulation_parameters_index = step * 5 + 1
         error_integral_range = run_plotting(simulation_parameters_index, colourscale_range=[1.4457175577307878e-05, 4],
-                                            output_subfolder=output_subfolder)
+                                            output_subfolder=config_manager.get_l2_grid_plot_output_subfolder())
         all_error_integral_ranges.append(error_integral_range)
 
     field_names = ['u', 'v', 'p']

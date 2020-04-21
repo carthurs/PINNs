@@ -12,5 +12,10 @@
   "master_model_data_root_path": "/home/chris/WorkData/nektar++/actual/bezier/master_data/",
   "gmsh_path": "gmsh",
   "paraview_python_interpreter": "/home/chris/extraspace/Software/paraview/ParaView-5.7.0-MPI-Linux-Python3.7-64bit/bin/python",
-  "boundary_errors_filename_template": "boundary_errors_step_{}.pickle"
+  "boundary_errors_filename_template": "boundary_errors_step_{}.pickle",
+  "ala_starting_index": "0",
+  "proportion_of_training_data_to_use": "0.99",
+  "l2_grid_plot_output_subfolder": "L2_plots",
+  "use_slack_notifications": "false",
+  "slack_push_url": "set this up by following the instructions here: https://api.slack.com/start/overview"
 }

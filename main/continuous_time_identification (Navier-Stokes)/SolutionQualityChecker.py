@@ -465,8 +465,9 @@ if __name__ == '__main__':
     plot_all_figures = True
     # saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
     # pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
-    model_index_to_load = 36
-    data_root = '/home/chris/WorkData/nektar++/actual/bezier/master_data_main_paper_data/'
+    config_manager = ConfigManager.ConfigManager()
+    model_index_to_load = config_manager.get_ala_starting_index()
+    data_root = config_manager.get_master_model_data_root_path()
     saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
     pickled_model_filename = os.path.join(data_root, 'saved_model_{}.pickle'.format(model_index_to_load))
 
@@ -506,7 +507,7 @@ if __name__ == '__main__':
     #                                                                              true_density_value, true_viscosity_value, test_vtu_filename,
     #                                                                              test_parameters_container)
 
-    t_param = 2.0
+    t_param = 1.5
     all_gradient_data = []
     for r_param in np.linspace(0, -2, num=81):
         all_gradient_data.append(GradientData(5.0, 5.0, 95.0, 5.0, t_param, r_param))
@@ -547,6 +548,6 @@ if __name__ == '__main__':
         plotting_array_r.append(r)
         plotting_array_pressure_drop.append(drop)
 
-    NavierStokes.plot_graph(plotting_array_r, plotting_array_pressure_drop, 'beans_2pt0_56ALA')
+    NavierStokes.plot_graph(plotting_array_r, plotting_array_pressure_drop, 'beans_2pt0_23ALA_corners_centre')
 
     timer.toc()
