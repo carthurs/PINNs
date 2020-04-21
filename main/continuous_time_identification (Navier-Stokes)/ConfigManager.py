@@ -27,6 +27,7 @@ class ConfigManager(object):
     USE_SLACK_NOTIFICATIONS = 'use_slack_notifications'
     TRAINING_STRATEGY = 'training_strategy'
     PARAVIEW_AVAILABLE = 'paraview_available'
+    MACHINE_ID = 'machine_id'
 
     def __init__(self, config_root=os.getcwd()):
         with open(config_root + '/config.json', 'r') as infile:
@@ -115,6 +116,9 @@ class ConfigManager(object):
             return ActiveLearningConstants.TrainingStrategies.RANDOM
         else:
             raise UnknownConfigurationInput
+
+    def get_machine_id(self):
+        return self.config_data[ConfigManager.MACHINE_ID]
 
 
 

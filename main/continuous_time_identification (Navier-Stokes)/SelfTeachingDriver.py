@@ -126,7 +126,9 @@ if __name__ == '__main__':
 
     for simulation_parameters_index in range(starting_index, ending_index):
         logger.info('Starting iteration {}'.format(simulation_parameters_index))
-        notify_slack('ALA SelfTeachingDriver.py starting iteration {}'.format(simulation_parameters_index))
+        machine_name = config_manager.get_machine_id()
+        notify_slack('Machine {} - ALA SelfTeachingDriver.py starting iteration {}'.format(machine_name,
+                                                                                           simulation_parameters_index))
         logger.info('Nametag is {}'.format(simulation_parameters_index))
 
         saved_tf_model_filename = os.path.join(master_model_data_root_path, 'saved_model_{}.tf')
