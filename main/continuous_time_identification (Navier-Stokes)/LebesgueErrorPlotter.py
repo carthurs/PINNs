@@ -245,14 +245,15 @@ def run_plotting(simulation_parameters_index, colourscale_range=None, output_sub
 if __name__ == '__main__':
     config_manager = ConfigManager.ConfigManager()
 
-    # for step in range(0, 13):
+    # for step in range(0, 7):
     #     simulation_parameters_index = step * 5 + 1
-    #     run_boundary_plotting(simulation_parameters_index, subfolder_name='boundary_error_plots', colourscale_range=[0, 0.00001])
+    #     # run_boundary_plotting(simulation_parameters_index, subfolder_name='boundary_error_plots_ALA_corners', colourscale_range=[0.000001, 0.0001])
+    #     run_boundary_plotting(simulation_parameters_index, subfolder_name='boundary_error_plots_ALA_corners_noslip_plots', colourscale_range=[0.00001, 0.0001])
 
     all_error_integral_ranges = []
-    for step in range(0, 13):
+    for step in range(0, 12):
         simulation_parameters_index = step * 5 + 1
-        error_integral_range = run_plotting(simulation_parameters_index, colourscale_range=[1.4457175577307878e-05, 4],
+        error_integral_range = run_plotting(simulation_parameters_index, colourscale_range=[0.1, 10.0],
                                             output_subfolder=config_manager.get_l2_grid_plot_output_subfolder())
         all_error_integral_ranges.append(error_integral_range)
 

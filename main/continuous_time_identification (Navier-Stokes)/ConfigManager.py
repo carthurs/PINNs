@@ -1,6 +1,7 @@
 import json
 import os
 import ActiveLearningConstants
+import pathlib
 
 class UnknownConfigurationInput(Exception):
     pass
@@ -95,7 +96,7 @@ class ConfigManager(object):
         return float(self.config_data[ConfigManager.PROPORTION_OF_TRAINING_DATA_TO_USE])
 
     def get_l2_grid_plot_output_subfolder(self):
-        return self.config_data[ConfigManager.L2_GRID_PLOT_OUTPUT_SUBFOLDER]
+        return pathlib.Path(self.config_data[ConfigManager.L2_GRID_PLOT_OUTPUT_SUBFOLDER])
 
     def get_slack_push_url(self):
         return self.config_data[ConfigManager.SLACK_PUSH_URL]
