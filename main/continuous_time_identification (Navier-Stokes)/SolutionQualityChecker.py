@@ -349,10 +349,10 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
 
     if colourscale_range is None:
         plt.scatter(scatter_x, scatter_y, c=scatter_colour, vmin=min(scatter_colour), vmax=max(scatter_colour),
-                    cmap='cividis', s=250)  #, norm=matplotlib.colors.LogNorm())
+                    cmap='cividis', s=250, norm=matplotlib.colors.LogNorm())
     else:
         plt.scatter(scatter_x, scatter_y, c=scatter_colour, vmin=colourscale_range[0], vmax=colourscale_range[1],
-                    cmap='cividis', s=250)  #, norm=matplotlib.colors.LogNorm())
+                    cmap='cividis', s=250,  norm=matplotlib.colors.LogNorm())
     plt.colorbar()
 
     title_map = {'inflow_velocity_error': 'Inflow Velocity',
