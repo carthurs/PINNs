@@ -55,10 +55,10 @@ class SimulationParameterContainer(object):
 
 
 class SimulationParameterManager(object):
-    def __init__(self, parameter_range_start, parameter_range_end, number_of_parameter_points):
+    def __init__(self, parameter_descriptor_t, parameter_descriptor_r):
         # Let's name t as the inflow parameter, and r as the curvature ("~radius") parameter
-        t_parameter_linspace = np.linspace(parameter_range_start, parameter_range_end, num=number_of_parameter_points)
-        r_parameter_linspace = np.linspace(parameter_range_start, parameter_range_end, num=number_of_parameter_points)
+        t_parameter_linspace = np.linspace(parameter_descriptor_t['range_start'], parameter_descriptor_t['range_end'], num=parameter_descriptor_t['number_of_points'])
+        r_parameter_linspace = np.linspace(parameter_descriptor_r['range_start'], parameter_descriptor_r['range_end'], num=parameter_descriptor_r['number_of_points'])
 
         self.parameter_dimensionality = 2
 

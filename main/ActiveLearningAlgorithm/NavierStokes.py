@@ -1256,7 +1256,17 @@ def evaluate_all_boundary_errors():
         test_vtu_filename_template_without_extension = (nektar_data_root_path + simulation_subfolder_template +
                                                         vtu_and_xml_file_basename + r'_using_points_from_xml')
 
-        simulation_parameter_manager = SPM.SimulationParameterManager(-2.0, 2.0, 13)
+        parameter_descriptor_t = {'range_start': -2.0, 'range_end': 2.0}
+        number_of_parameter_points_t = int(
+            (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
+        parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
+
+        parameter_descriptor_r = {'range_start': -2.0, 'range_end': 2.0}
+        number_of_parameter_points_r = int(
+            (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
+        parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
+
+        simulation_parameter_manager = SPM.SimulationParameterManager(parameter_descriptor_t, parameter_descriptor_r)
 
         gathered_errors = dict()
 

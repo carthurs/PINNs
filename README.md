@@ -21,6 +21,8 @@ In addition to the obvious utility of Item 2, above, we demonstrate an applicati
 
 ## Citation
 
+ArXiv paper: _Active Training of Physics-Informed Neural Networks to Aggregate and Interpolate Parametric Solutions to the Navier-Stokes Equations_. Available here: https://arxiv.org/abs/2005.05092
+
     @misc{arthurs2020active,
     title={Active Training of Physics-Informed Neural Networks to Aggregate and Interpolate Parametric Solutions to the Navier-Stokes Equations},
     author={Christopher J Arthurs and Andrew P King},
@@ -28,7 +30,6 @@ In addition to the obvious utility of Item 2, above, we demonstrate an applicati
     eprint={2005.05092},
     archivePrefix={arXiv},
     primaryClass={physics.comp-ph}
-}
 
 ## Key References
   - Raissi, Maziar, Paris Perdikaris, and George Em Karniadakis. "[Physics Informed Deep Learning (Part I): Data-driven Solutions of Nonlinear Partial Differential Equations](https://arxiv.org/abs/1711.10561)." arXiv preprint arXiv:1711.10561 (2017).

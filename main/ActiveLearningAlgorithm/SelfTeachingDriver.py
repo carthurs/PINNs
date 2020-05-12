@@ -87,15 +87,32 @@ if __name__ == '__main__':
     if not test_mode:
         num_training_iterations = 20000
         max_optimizer_iterations = 50000
-        parameter_range_start = -2.0
-        parameter_range_end = 2.0
+
+        parameter_descriptor_t = {'range_start': -2.0, 'range_end': 2.0}
+        number_of_parameter_points_t = int(
+            (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
+        parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
+
+        parameter_descriptor_r = {'range_start': -2.0, 'range_end': 2.0}
+        number_of_parameter_points_r = int(
+            (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
+        parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
     else:
         num_training_iterations = 20
         max_optimizer_iterations = 50
-        parameter_range_start = 0.0
-        parameter_range_end = 1.0
 
-    number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 3) + 1
+        parameter_descriptor_t = {'range_start': 0.0, 'range_end': 1.0}
+        number_of_parameter_points_t = int(
+            (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
+        parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
+
+        parameter_descriptor_r = {'range_start': 0.0, 'range_end': 1.0}
+        number_of_parameter_points_r = int(
+            (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
+        parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
+
+    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_descriptor_t,
+                                                                              parameter_descriptor_r)
 
     try:
         sim_dir_and_parameter_tuples_picklefile = sim_dir_and_parameter_tuples_picklefile_basename.format(starting_index)
@@ -109,11 +126,6 @@ if __name__ == '__main__':
         additional_t_parameters_NS_simulations_run_at = []
         logger.warning("Previous simualtion iterations not found. Starting from scratch at iteration {}".format(
                                                                                                         starting_index))
-
-    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_range_start,
-                                                                              parameter_range_end,
-                                                                              number_of_parameter_points)
-
 
     nektar_driver = NektarDriver.NektarDriver(nektar_data_root_path, reference_data_subfolder,
                                               simulation_subfolder_template,
@@ -226,8 +238,8 @@ if __name__ == '__main__':
                                                                         config_manager, picklefile_name, logger,
                                                                         nektar_driver,
                                                                         parameters_scatter_plot_filename_tag=str(scatterplot_tag),
-                                                                        xrange=(parameter_range_start, parameter_range_end),
-                                                                        yrange=(parameter_range_start, parameter_range_end))
+                                                                        xrange=(parameter_descriptor_t['range_start'], parameter_descriptor_t['range_end']),
+                                                                        yrange=(parameter_descriptor_r['range_start'], parameter_descriptor_r['range_end']))
 
         if config_manager.paraview_available() and (simulation_parameters_index - 1) % 5 == 0:
             error_integral_range = LebesgueErrorPlotter.run_plotting(simulation_parameters_index,

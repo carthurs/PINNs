@@ -165,12 +165,18 @@ def scatterplot_used_datapoints_and_errors_boundary(parameter_manager, config_ma
 
 
 def run_boundary_plotting(simulation_parameters_index, subfolder_name='', colourscale_range=None):
-    parameter_range_start = -2.0
-    parameter_range_end = 2.0
-    number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 3) + 1
-    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_range_start,
-                                                                              parameter_range_end,
-                                                                              number_of_parameter_points)
+    parameter_descriptor_t = {'range_start': -2.0, 'range_end': 2.0}
+    number_of_parameter_points_t = int(
+        (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
+    parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
+
+    parameter_descriptor_r = {'range_start': -2.0, 'range_end': 2.0}
+    number_of_parameter_points_r = int(
+        (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
+    parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
+
+    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_descriptor_t,
+                                                                              parameter_descriptor_r)
 
     config_manager = ConfigManager.ConfigManager()
     master_model_data_root_path = config_manager.get_master_model_data_root_path()
@@ -190,16 +196,22 @@ def run_plotting(simulation_parameters_index, colourscale_range=None, output_sub
         os.mkdir(str(output_subfolder))
         logger.info('Created missing output_subfolder {}'.format(output_subfolder))
 
-    parameter_range_start = -2.0
-    parameter_range_end = 2.0
-    number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 3) + 1
+    parameter_descriptor_t = {'range_start': -2.0, 'range_end': 2.0}
+    number_of_parameter_points_t = int(
+        (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
+    parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
+
+    parameter_descriptor_r = {'range_start': -2.0, 'range_end': 2.0}
+    number_of_parameter_points_r = int(
+        (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
+    parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
+
+    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_descriptor_t,
+                                                                              parameter_descriptor_r)
 
     true_viscosity = 0.004
     true_density = 0.00106
 
-    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_range_start,
-                                                                              parameter_range_end,
-                                                                              number_of_parameter_points)
     config_manager = ConfigManager.ConfigManager()
     nektar_data_root_path = config_manager.get_nektar_data_root_path()
     reference_data_subfolder = r'basic'
