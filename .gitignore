@@ -9,4 +9,4 @@ config.json
 logs/*
 SelfTeachingDriverLog.txt
 
-/main/continuous_time_identification (Navier-Stokes)/SelfTeachingDriverLog.txt.old
+/main/ActiveLearningAlgorithm/SelfTeachingDriverLog.txt.old
