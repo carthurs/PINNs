@@ -1,0 +1,57 @@
+<NEKTAR>
+	<CONDITIONS>
+		<PARAMETERS>
+			<P>TimeStep = 0.001</P>
+			<P>NumSteps = 2000</P>
+			<P>KinVis = 3.773584</P>
+			<P>rho = 0.00106</P>
+			<P>IO_InfoSteps = 5</P>
+			<P>IO_CFLSteps = 20</P>
+		</PARAMETERS>
+		<BOUNDARYREGIONS>
+			<B ID="0">C[1]</B>
+			<B ID="1">C[2]</B>
+			<B ID="2">C[3]</B>
+			<B ID="3">C[4]</B>
+		</BOUNDARYREGIONS>
+		<BOUNDARYCONDITIONS>
+			<REGION REF="0">
+				<!-- top -->
+				<N USERDEFINEDTYPE="H" VALUE="0.0" VAR="p"/>
+				<D VALUE="0.0" VAR="u"/>
+				<D VALUE="0.0" VAR="v"/>
+			</REGION>
+			<REGION REF="1">
+				<!-- bottom -->
+				<N USERDEFINEDTYPE="H" VALUE="0.0" VAR="p"/>
+				<D VALUE="0.0" VAR="u"/>
+				<D VALUE="0.0" VAR="v"/>
+			</REGION>
+			<REGION REF="2">
+				<!-- left -->
+				<N USERDEFINEDTYPE="H" VALUE="0.0" VAR="p"/>
+				<D VALUE="y*(10-y)/25" VAR="u"/>
+				<D VALUE="0.0" VAR="v"/>
+			</REGION>
+			<REGION REF="3">
+				<!-- right -->
+				<D VALUE="0.0" VAR="p"/>
+				<N VALUE="0.0" VAR="u"/>
+				<N VALUE="0.0" VAR="v"/>
+			</REGION>
+		</BOUNDARYCONDITIONS>
+		<SOLVERINFO>
+			<I PROPERTY="EQTYPE" VALUE="UnsteadyNavierStokes"/>
+			<I PROPERTY="SolverType" VALUE="VelocityCorrectionScheme"/>
+			<I PROPERTY="Driver" VALUE="Standard"/>
+			<I PROPERTY="Projection" VALUE="Continuous"/>
+			<I PROPERTY="TimeIntegrationMethod" VALUE="IMEXOrder2"/>
+			<I PROPERTY="GlobalSysSoln" VALUE="IterativeStaticCond"/>
+		</SOLVERINFO>
+		<VARIABLES>
+			<V ID="0">u</V>
+			<V ID="1">v</V>
+			<V ID="2">p</V>
+		</VARIABLES>
+	</CONDITIONS>
+</NEKTAR>
