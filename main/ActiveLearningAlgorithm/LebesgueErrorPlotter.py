@@ -246,8 +246,8 @@ def run_plotting(simulation_parameters_index, colourscale_range=None, output_sub
                                                                   nektar_driver,
                                                                   parameters_scatter_plot_filename_tag=str(
                                                                       simulation_parameters_index),
-                                                                  xrange=(parameter_range_start, parameter_range_end),
-                                                                  yrange=(parameter_range_start, parameter_range_end),
+                                                                  xrange=(parameter_descriptor_t['range_start'], parameter_descriptor_t['range_end']),
+                                                                  yrange=(parameter_descriptor_r['range_start'], parameter_descriptor_r['range_end']),
                                                                   colourscale_range=colourscale_range,
                                                                   output_subfolder=output_subfolder)
 

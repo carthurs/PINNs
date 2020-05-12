@@ -518,6 +518,8 @@ def plot_graph(x_data, y_data, title, scatter_x=None, scatter_y=None, savefile_n
 
     figure_savefile = title.replace(" ", "_") + '.png'
     if relative_or_absolute_output_folder is not None:
+        if not os.path.exists(relative_or_absolute_output_folder):
+            os.mkdir(relative_or_absolute_output_folder)
         figure_savefile = relative_or_absolute_output_folder + figure_savefile
     plt.savefig(figure_savefile)
     plt.close()

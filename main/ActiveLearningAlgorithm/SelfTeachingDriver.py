@@ -88,12 +88,12 @@ if __name__ == '__main__':
         num_training_iterations = 20000
         max_optimizer_iterations = 50000
 
-        parameter_descriptor_t = {'range_start': -2.0, 'range_end': 2.0}
+        parameter_descriptor_t = {'range_start': 0.0, 'range_end': 2.0}
         number_of_parameter_points_t = int(
             (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
         parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
 
-        parameter_descriptor_r = {'range_start': -2.0, 'range_end': 2.0}
+        parameter_descriptor_r = {'range_start': -9.0, 'range_end': 0.0}
         number_of_parameter_points_r = int(
             (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
         parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
@@ -199,6 +199,9 @@ if __name__ == '__main__':
             )
 
         picklefile_name = sim_dir_and_parameter_tuples_picklefile_basename.format(simulation_parameters_index + 1)
+
+        if not os.path.exists(master_model_data_root_path):
+            os.mkdir(master_model_data_root_path)
         with open(picklefile_name, 'wb') as outfile:
             pickle.dump(sim_dir_and_parameter_tuples, outfile)
             logger.info("Saved sim_dir_and_parameter_tuples to file {}".format(picklefile_name))
@@ -243,5 +246,5 @@ if __name__ == '__main__':
 
         if config_manager.paraview_available() and (simulation_parameters_index - 1) % 5 == 0:
             error_integral_range = LebesgueErrorPlotter.run_plotting(simulation_parameters_index,
-                                                                     colourscale_range=[0.0, 2.0],
-                                                output_subfolder=pathlib.Path(config_manager.get_l2_grid_plot_output_subfolder()))
+                                                                     colourscale_range=[0.00000001, 2.0],
+                                                output_subfolder=pathlib.Path(config_manager.get_l2_grid_plot_output_subfolder()))  # 0.0 in the colourscale_range can cause a divide-by-zero in matplotlib
