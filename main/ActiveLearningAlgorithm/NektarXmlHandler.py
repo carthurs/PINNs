@@ -29,12 +29,30 @@ class NektarXmlHandler(object):
     def _find_vertices(self):
         return self.xml_tree.getroot().find('GEOMETRY').find('VERTEX')
 
+    # this functiond deals witht he fact that ID lists for items belonging to a composite are sometimes listed like
+    # this: 1,2,3,4-7,8,9
+    # where we need to expand 4-7 to be 4,5,6,7.
+    def _expand_dash_denoted_ranges(self, composite_text):
+        item_id_list = list()
+
+        for segment in composite_text.split(','):
+            if '-' in segment:
+                range_start = int(segment.split('-')[0])
+                range_end = int(segment.split('-')[1])
+                for item_id in range(range_start, range_end+1):
+                    item_id_list.append(item_id)
+            else:
+                item_id_list.append(int(segment))
+
+        return item_id_list
+
+
     def find_composite_by_id(self, id):
         id = str(id)
         composites_parent_node = self._find_composites()
         for composite in composites_parent_node:
             if composite.attrib['ID'] == id:
-                IDs = [int(ii) for ii in composite.text[3:-2].split(',')]
+                IDs = [int(ii) for ii in self._expand_dash_denoted_ranges(composite.text[3:-2])]
                 return IDs
 
     def get_nodes_of_edge(self, id):
