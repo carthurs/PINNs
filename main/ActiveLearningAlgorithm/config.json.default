@@ -20,5 +20,15 @@
   "l2_grid_plot_output_subfolder": "L2_plots",
   "use_slack_notifications": "false",
   "slack_push_url": "set this up by following the instructions here: https://api.slack.com/start/overview",
-  "training_strategy": "active"
+  "training_strategy": "active",
+  "inflow_parameter_range_start": "-2.0",
+  "inflow_parameter_range_end": "2.0",
+  "diameter_parameter_range_start": "-2.0",
+  "diameter_parameter_range_end": "2.0",
+  "parameter_space_point_spacing": "0.3333",
+  "network_width": "80",
+  "number_of_hidden_layers": "4",
+  "navier_stokes_loss_scaling":  "100",
+  "pressure_node_loss_scaling": "31.62",
+  "custom_curvature_refinement_enabled": "false"
 }

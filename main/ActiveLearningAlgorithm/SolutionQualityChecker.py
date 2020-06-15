@@ -345,6 +345,11 @@ def scatterplot_parameters_with_colours(parameter_container_to_colours_dict, fie
         scatter_y.append(parameter_container.get_r())
         scatter_colour.append(parameter_container_to_colours_dict[parameter_container])
 
+    if min(np.isnan(scatter_colour)) == True:
+        logger = logging.getLogger('SelfTeachingDriver')
+        logger.warning("Not plotting in scatterplot_parameters_with_colours() because all the colour values were nan.")
+        return
+
     plt.figure(90)
 
     if colourscale_range is None:
@@ -458,25 +463,40 @@ class GradientData(object):
 
 if __name__ == '__main__':
 
-    timer=TicToc()
+    timer = TicToc()
     timer.tic()
 
     plot_all_figures = True
     # saved_tf_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.tf'
     # pickled_model_filename = 'retrained4_retrained3_retrained2_retrained_trained_model_nonoise_100000tube10mm_diameter_pt05meshworking_500TrainingDatapoints_zero_ref_pressure.pickle_6_layers.pickle'
     config_manager = ConfigManager.ConfigManager()
-    model_index_to_load = '23'
+    model_index_to_load = '65'
     data_root = config_manager.get_master_model_data_root_path()
     saved_tf_model_filename = os.path.join(data_root, 'saved_model_{}.tf'.format(model_index_to_load))
     pickled_model_filename = os.path.join(data_root, 'saved_model_{}.pickle'.format(model_index_to_load))
 
-    parameter_range_start = -2.0
-    parameter_range_end = 2.0
-    number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 3) + 1
+    # parameter_range_start = -2.0
+    # parameter_range_end = 2.0
+    # number_of_parameter_points = int((parameter_range_end - parameter_range_start) * 3) + 1
+    #
+    # parameter_manager = SPM.SimulationParameterManager(parameter_range_start,
+    #                                                    parameter_range_end,
+    #                                                    number_of_parameter_points)
 
-    parameter_manager = SPM.SimulationParameterManager(parameter_range_start,
-                                                       parameter_range_end,
-                                                       number_of_parameter_points)
+    parameter_descriptor_t = {'range_start': config_manager.get_inflow_parameter_range_start(),
+                              'range_end': config_manager.get_inflow_parameter_range_end()}
+    number_of_parameter_points_t = int(
+        (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
+    parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
+
+    parameter_descriptor_r = {'range_start': config_manager.get_diameter_parameter_range_start(),
+                              'range_end': config_manager.get_diameter_parameter_range_end()}
+    number_of_parameter_points_r = int(
+        (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
+    parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
+
+    parameter_manager = SPM.SimulationParameterManager(parameter_descriptor_t,
+                                                                              parameter_descriptor_r)
 
     # t_parameter_linspace = np.linspace(0.0, 6.0, num=61)
 
@@ -507,9 +527,12 @@ if __name__ == '__main__':
     #                                                                              true_density_value, true_viscosity_value, test_vtu_filename,
     #                                                                              test_parameters_container)
 
+    # Set single inflow rate for parameter sweep
     t_param = 2.0
+
+    # Set range of diameter points to sweep
     all_gradient_data = []
-    for r_param in np.linspace(0, -2, num=81):
+    for r_param in np.linspace(0, -9, num=81):
         all_gradient_data.append(GradientData(5.0, 5.0, 95.0, 5.0, t_param, r_param))
 
     N = len(all_gradient_data) * 2
@@ -548,6 +571,6 @@ if __name__ == '__main__':
         plotting_array_r.append(r)
         plotting_array_pressure_drop.append(drop)
 
-    NavierStokes.plot_graph(plotting_array_r, plotting_array_pressure_drop, 'beans_2pt0_23ALA_corners_centre')
+    NavierStokes.plot_graph(plotting_array_r, plotting_array_pressure_drop, 'narrow_t2pt0_55ALA', logplot=False)
 
     timer.toc()

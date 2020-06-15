@@ -164,19 +164,7 @@ def scatterplot_used_datapoints_and_errors_boundary(parameter_manager, config_ma
                                                                    subfolder_name=pathlib.Path(subfolder_name))
 
 
-def run_boundary_plotting(simulation_parameters_index, subfolder_name='', colourscale_range=None):
-    parameter_descriptor_t = {'range_start': -2.0, 'range_end': 2.0}
-    number_of_parameter_points_t = int(
-        (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
-    parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
-
-    parameter_descriptor_r = {'range_start': -2.0, 'range_end': 2.0}
-    number_of_parameter_points_r = int(
-        (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
-    parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
-
-    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_descriptor_t,
-                                                                              parameter_descriptor_r)
+def run_boundary_plotting(simulation_parameters_index, parameter_manager, subfolder_name='', colourscale_range=None):
 
     config_manager = ConfigManager.ConfigManager()
     master_model_data_root_path = config_manager.get_master_model_data_root_path()
@@ -189,25 +177,14 @@ def run_boundary_plotting(simulation_parameters_index, subfolder_name='', colour
                                                     colourscale_range=colourscale_range, subfolder_name=subfolder_name)
 
 
-def run_plotting(simulation_parameters_index, colourscale_range=None, output_subfolder=pathlib.Path('.')):
+def run_plotting(simulation_parameters_index, parameter_manager,
+                 colourscale_range=None, output_subfolder=pathlib.Path('.')):
+
     logger = ActiveLearningUtilities.create_logger('SelfTeachingDriver')
 
     if not os.path.exists(str(output_subfolder)):
         os.mkdir(str(output_subfolder))
         logger.info('Created missing output_subfolder {}'.format(output_subfolder))
-
-    parameter_descriptor_t = {'range_start': -2.0, 'range_end': 2.0}
-    number_of_parameter_points_t = int(
-        (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
-    parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
-
-    parameter_descriptor_r = {'range_start': -2.0, 'range_end': 2.0}
-    number_of_parameter_points_r = int(
-        (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
-    parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
-
-    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_descriptor_t,
-                                                                              parameter_descriptor_r)
 
     true_viscosity = 0.004
     true_density = 0.00106
@@ -246,26 +223,57 @@ def run_plotting(simulation_parameters_index, colourscale_range=None, output_sub
                                                                   nektar_driver,
                                                                   parameters_scatter_plot_filename_tag=str(
                                                                       simulation_parameters_index),
-                                                                  xrange=(parameter_descriptor_t['range_start'], parameter_descriptor_t['range_end']),
-                                                                  yrange=(parameter_descriptor_r['range_start'], parameter_descriptor_r['range_end']),
+                                                                  xrange=(parameter_manager.get_t_range_start(), parameter_manager.get_t_range_end()),
+                                                                  yrange=(parameter_manager.get_r_range_start(), parameter_manager.get_r_range_end()),
                                                                   colourscale_range=colourscale_range,
                                                                   output_subfolder=output_subfolder)
 
     return error_integral_range
 
 
+def create_parameter_manager(config_manager):
+    parameter_descriptor_t = {'range_start': config_manager.get_inflow_parameter_range_start(),
+                              'range_end': config_manager.get_inflow_parameter_range_end()}
+
+    points_per_unit_parameter_interval = round(1.0 / config_manager.get_parameter_space_point_spacing())
+
+    number_of_parameter_points_t = round(
+        (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']
+         ) * points_per_unit_parameter_interval) + 1
+
+    parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
+
+    parameter_descriptor_r = {'range_start': config_manager.get_diameter_parameter_range_start(),
+                              'range_end': config_manager.get_diameter_parameter_range_end()}
+
+    points_per_unit_parameter_interval = round(1.0 / config_manager.get_parameter_space_point_spacing())
+    number_of_parameter_points_r = round(
+        (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']
+         ) * points_per_unit_parameter_interval) + 1
+
+    parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
+
+    parameter_manager = SimulationParameterManager.SimulationParameterManager(parameter_descriptor_t,
+                                                                              parameter_descriptor_r)
+    return parameter_manager
+
+
 if __name__ == '__main__':
     config_manager = ConfigManager.ConfigManager()
 
+    parameter_manager = create_parameter_manager(config_manager)
+
     # for step in range(0, 7):
     #     simulation_parameters_index = step * 5 + 1
-    #     # run_boundary_plotting(simulation_parameters_index, subfolder_name='boundary_error_plots_ALA_corners', colourscale_range=[0.000001, 0.0001])
-    #     run_boundary_plotting(simulation_parameters_index, subfolder_name='boundary_error_plots_ALA_corners_noslip_plots', colourscale_range=[0.00001, 0.0001])
+    #     # run_boundary_plotting(simulation_parameters_index, parameter_manager, subfolder_name='boundary_error_plots_ALA_corners', colourscale_range=[0.000001, 0.0001])
+    #     run_boundary_plotting(simulation_parameters_index, parameter_manager, subfolder_name='boundary_error_plots_ALA_corners_noslip_plots', colourscale_range=[0.00001, 0.0001])
 
     all_error_integral_ranges = []
-    for step in range(0, 12):
-        simulation_parameters_index = step * 5 + 1
-        error_integral_range = run_plotting(simulation_parameters_index, colourscale_range=[0.1, 10.0],
+    for step in range(30, 31):
+        simulation_parameters_index = step #* 5 + 1
+        error_integral_range = run_plotting(simulation_parameters_index,
+                                            parameter_manager,
+                                            colourscale_range=[0.1, 10.0],
                                             output_subfolder=config_manager.get_l2_grid_plot_output_subfolder())
         all_error_integral_ranges.append(error_integral_range)
 

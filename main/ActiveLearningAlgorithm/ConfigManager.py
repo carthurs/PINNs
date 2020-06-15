@@ -29,6 +29,17 @@ class ConfigManager(object):
     TRAINING_STRATEGY = 'training_strategy'
     PARAVIEW_AVAILABLE = 'paraview_available'
     MACHINE_ID = 'machine_id'
+    INFLOW_PARAMETER_RANGE_START = 'inflow_parameter_range_start'
+    INFLOW_PARAMETER_RANGE_END = 'inflow_parameter_range_end'
+    DIAMETER_PARAMETER_RANGE_START = 'diameter_parameter_range_start'
+    DIAMETER_PARAMETER_RANGE_END = 'diameter_parameter_range_end'
+    PARAMETER_SPACE_POINT_SPACING = 'parameter_space_point_spacing'
+    NUMBER_OF_HIDDEN_LAYERS = 'number_of_hidden_layers'
+    NETWORK_WIDTH = 'network_width'
+    NAVIER_STOKES_LOSS_SCALING = 'navier_stokes_loss_scaling'
+    PRESSURE_NODE_LOSS_SCALING = 'pressure_node_loss_scaling'
+    CUSTOM_CURVATURE_REFINEMENT_ENABLED = 'custom_curvature_refinement_enabled'
+
 
     def __init__(self, config_root=os.getcwd()):
         # Load default settings first
@@ -129,6 +140,44 @@ class ConfigManager(object):
     def get_machine_id(self):
         return self.config_data[ConfigManager.MACHINE_ID]
 
+    def get_inflow_parameter_range_start(self):
+        return float(self.config_data[ConfigManager.INFLOW_PARAMETER_RANGE_START])
 
+    def get_inflow_parameter_range_end(self):
+        return float(self.config_data[ConfigManager.INFLOW_PARAMETER_RANGE_END])
 
+    def get_diameter_parameter_range_start(self):
+        return float(self.config_data[ConfigManager.DIAMETER_PARAMETER_RANGE_START])
 
+    def get_diameter_parameter_range_end(self):
+        return float(self.config_data[ConfigManager.DIAMETER_PARAMETER_RANGE_END])
+
+    def get_parameter_space_point_spacing(self):
+        config_point_spacing = self.config_data[ConfigManager.PARAMETER_SPACE_POINT_SPACING]
+        points_per_unit_parameter_interval = 1.0/float(config_point_spacing)
+
+        distance_from_being_an_integer = abs(round(points_per_unit_parameter_interval) - points_per_unit_parameter_interval)
+        if distance_from_being_an_integer > 1e-3:
+            raise RuntimeError("Config parameter value {} should be the reciprocal of an integer."
+                               " It was {} (error {}).".format(
+                                    ConfigManager.PARAMETER_SPACE_POINT_SPACING,
+                config_point_spacing,
+                distance_from_being_an_integer))
+
+        return float(config_point_spacing)
+
+    def get_number_of_hidden_layers(self):
+        return int(self.config_data[ConfigManager.NUMBER_OF_HIDDEN_LAYERS])
+
+    def get_network_width(self):
+        return int(self.config_data[ConfigManager.NETWORK_WIDTH])
+
+    def get_navier_stokes_loss_scaling(self):
+        return float(self.config_data[ConfigManager.NAVIER_STOKES_LOSS_SCALING])
+
+    def get_pressure_node_loss_scaling(self):
+        return float(self.config_data[ConfigManager.PRESSURE_NODE_LOSS_SCALING])
+
+    def custom_curvature_refinement_enabled(self):
+        use_custom_curvature_refinement = self.config_data[ConfigManager.CUSTOM_CURVATURE_REFINEMENT_ENABLED].lower()
+        return self._true_or_false_string_to_bool(use_custom_curvature_refinement)

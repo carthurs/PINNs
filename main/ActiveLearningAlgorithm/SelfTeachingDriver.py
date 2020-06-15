@@ -72,7 +72,6 @@ if __name__ == '__main__':
     true_density = 0.00106
 
     use_pressure_reference_in_training = True
-    number_of_hidden_layers = 4
 
     starting_index = config_manager.get_ala_starting_index()
     ending_index = 200
@@ -88,14 +87,25 @@ if __name__ == '__main__':
         num_training_iterations = 20000
         max_optimizer_iterations = 50000
 
-        parameter_descriptor_t = {'range_start': 0.0, 'range_end': 2.0}
+        parameter_descriptor_t = {'range_start': config_manager.get_inflow_parameter_range_start(),
+                                  'range_end': config_manager.get_inflow_parameter_range_end()}
+
+        points_per_unit_parameter_interval = int(1.0/config_manager.get_parameter_space_point_spacing())
+
         number_of_parameter_points_t = int(
-            (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']) * 3) + 1
+            (parameter_descriptor_t['range_end'] - parameter_descriptor_t['range_start']
+             ) * points_per_unit_parameter_interval) + 1
+
         parameter_descriptor_t['number_of_points'] = number_of_parameter_points_t
 
-        parameter_descriptor_r = {'range_start': -9.0, 'range_end': 0.0}
+        parameter_descriptor_r = {'range_start': config_manager.get_diameter_parameter_range_start(),
+                                  'range_end': config_manager.get_diameter_parameter_range_end()}
+
+        points_per_unit_parameter_interval = int(1.0 / config_manager.get_parameter_space_point_spacing())
         number_of_parameter_points_r = int(
-            (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']) * 3) + 1
+            (parameter_descriptor_r['range_end'] - parameter_descriptor_r['range_start']
+             ) * points_per_unit_parameter_interval) + 1
+
         parameter_descriptor_r['number_of_points'] = number_of_parameter_points_r
     else:
         num_training_iterations = 20
@@ -207,7 +217,7 @@ if __name__ == '__main__':
             logger.info("Saved sim_dir_and_parameter_tuples to file {}".format(picklefile_name))
 
         NavierStokes.run_NS_trainer(pickled_model_filename, saved_tf_model_filename, simulation_parameters_index,
-                                    num_training_iterations, use_pressure_reference_in_training, number_of_hidden_layers,
+                                    num_training_iterations, use_pressure_reference_in_training,
                                     max_optimizer_iterations, training_count_specifier, true_viscosity,
                                     true_density, load_existing_model=start_from_existing_model,
                                     additional_simulation_data=sim_dir_and_parameter_tuples, parent_logger=logger,
@@ -246,5 +256,6 @@ if __name__ == '__main__':
 
         if config_manager.paraview_available() and (simulation_parameters_index - 1) % 5 == 0:
             error_integral_range = LebesgueErrorPlotter.run_plotting(simulation_parameters_index,
+                                                                     parameter_manager,
                                                                      colourscale_range=[0.00000001, 2.0],
                                                 output_subfolder=pathlib.Path(config_manager.get_l2_grid_plot_output_subfolder()))  # 0.0 in the colourscale_range can cause a divide-by-zero in matplotlib

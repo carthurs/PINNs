@@ -424,6 +424,7 @@ class MultipleFileReader(object):
         self.file_names_by_parameter_values = dict()
 
     def add_file_name(self, file_name, parameters_container):
+
         data_for_this_file = VtkDataReader(file_name, parameters_container,
                                            self.cached_data_path
                                           ).get_data_by_mode(self.mode)

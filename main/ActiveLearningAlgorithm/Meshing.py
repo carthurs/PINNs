@@ -49,6 +49,17 @@ class MeshGenerator(object):
         else:
             ActiveLearningUtilities.substitute_text_in_file('untitled.geo', 'curving_param = 20.0',
                                     'curving_param = {}'.format(self.parameters_container.get_r()))
+
+            if self.config_manager.custom_curvature_refinement_enabled() and self.parameters_container.get_r() < 0.0:
+                # scale the mesh size linearly in r, taking the value 0.2 when r=-9.0, and 1.0 when r=0. Linearly
+                # interpolate inbetween. Note this is only hte negative r cases, due to the if-clause we're in.
+                fine_mesh_size = 0.2 + (1.0 - abs(self.parameters_container.get_r()/9.0)) * (1.0 - 0.2)
+            else:
+                fine_mesh_size = 1.0
+            ActiveLearningUtilities.substitute_text_in_file('untitled.geo', 'fine_mesh_size = 0.25',
+                                                            'fine_mesh_size = {}'.format(
+                                                                fine_mesh_size))
+
             meshing_process_outcome = subprocess.run([self.config_manager.get_gmsh_exe(), 'untitled.geo', '-2'])
             return_message = 'Return code of gmsh call was {}.'.format(meshing_process_outcome.returncode)
             if self.logger:

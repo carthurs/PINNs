@@ -143,8 +143,9 @@ class PhysicsInformedNN:
         #                                     tf.where(tf.math.greater(self.y_tf, 9.999), self.u_pred + self.v_pred,
         #                                              zero)))
 
-        navier_stokes_loss_scaling = 1000
-        pressure_node_loss_scaling = 100
+        config_manager = ConfigManager.ConfigManager()
+        navier_stokes_loss_scaling = config_manager.get_navier_stokes_loss_scaling()
+        pressure_node_loss_scaling = config_manager.get_pressure_node_loss_scaling()
 
         self.loss_velocity = tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.u_tf, tf.constant(-1.0)), zeros, self.u_tf - self.u_pred))) + \
                              tf.reduce_sum(tf.square(tf.where(tf.math.equal(self.v_tf, tf.constant(-1.0)), zeros, self.v_tf - self.v_pred)))
@@ -154,11 +155,13 @@ class PhysicsInformedNN:
         if self.ref_nodes_with_true_pressures is not None:
             difference_sum = 0
             for node_index in range(len(self.ref_nodes_with_true_pressures)):
-                difference_sum += tf.square(self.predicted_ref_node_pressures[node_index] - self.ref_nodes_with_true_pressures[node_index][4])
+                difference_sum += tf.square(self.predicted_ref_node_pressures[node_index] -
+                                            self.ref_nodes_with_true_pressures[node_index][4])
 
-            self.loss_pressure_node = tf.squeeze(difference_sum * pressure_node_loss_scaling)
+            self.loss_pressure_node = tf.squeeze(difference_sum * pressure_node_loss_scaling**2)
 
-            self.loss_pressure_node_summary = tf.summary.scalar("loss_pressure_node", self.loss_pressure_node)
+            self.loss_pressure_node_summary = tf.summary.scalar("loss_pressure_node",
+                                                                self.loss_pressure_node / (pressure_node_loss_scaling**2))
 
             # loss_t_gradient = tf.reduce_sum(tf.square(navier_stokes_loss_scaling*psi_t_pred)) +\
             #                   tf.reduce_sum(tf.square(navier_stokes_loss_scaling*p_t_pred))
@@ -828,7 +831,7 @@ def evaluate_solution(model, test_data):
 
 
 def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, number_of_training_iterations,
-                   use_pressure_reference_in_training, number_of_hidden_layers, max_optimizer_iterations_in,
+                   use_pressure_reference_in_training, max_optimizer_iterations_in,
                    N_train_specifier,
                    true_viscosity_value,
                    true_density_value,
@@ -870,7 +873,8 @@ def run_NS_trainer(input_pickle_file_template, input_saved_model_template, savef
         # use_pressure_reference_in_training = True
         # number_of_training_iterations = 100000  # 200000
 
-        layers = [4] + [80] * number_of_hidden_layers + [3]
+        config_manager = ConfigManager.ConfigManager()
+        layers = [4] + [config_manager.get_network_width()] * config_manager.get_number_of_hidden_layers() + [3]
         # layers = [3, 20, 20, 20, 20, 20, 2]
 
         # Load Data
@@ -1341,7 +1345,7 @@ if __name__ == "__main__":
     # use_pressure_reference_in_training = True
     # vtu_data_file_name = 'tube_bezier_1pt0mesh'
     # savefile_tag = 4
-    # number_of_hidden_layers = 4
+    # number_of_hidden_layers = config_manager.get_number_of_hidden_layers()
     # true_viscosity = 0.004
     # true_density = 0.00106
     #
@@ -1360,7 +1364,7 @@ if __name__ == "__main__":
     # N_train_in = 5000
     #
     # run_NS_trainer(input_pickle_file_template, input_saved_model_template, savefile_tag, num_training_iterations,
-    #                use_pressure_reference_in_training, number_of_hidden_layers, max_optimizer_iterations,
+    #                use_pressure_reference_in_training, max_optimizer_iterations,
     #                N_train_in, true_viscosity, true_density,
     #                load_existing_model=False, additional_simulation_data=[sim_dir_and_parameter_tuple])
 
